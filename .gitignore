@@ -1,0 +1,7 @@
+/target
+/vendor
+/postgres_work
+.env
+/downloads_test
+/downloads
+*.sql

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Cielo Mio
+Comment=BRSR Analytics App
+Exec=cielo_mio
+Icon=cielo_mio
+Terminal=false
+Categories=Office;Database;
+Keywords=BRSR;ESG;sustainability;analytics;XBRL;filings;reporting;BSE;NSE;AI;
+StartupNotify=true

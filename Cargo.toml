@@ -1,0 +1,116 @@
+[package]
+name = "cielo_mio"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "BRSR Analytics App"
+
+[package.metadata.generate-rpm]
+assets = [
+    # 1. Binary executable
+    { source = "target/release/cielo_mio", dest = "/usr/bin/cielo_mio", mode = "755" },
+
+    # 2. Desktop launcher entry
+    { source = "assets/cielo_mio.desktop", dest = "/usr/share/applications/cielo_mio.desktop", mode = "644" },
+
+    # 3. Application icons (pixmaps & standard hicolor theme)
+    { source = "assets/logo.png", dest = "/usr/share/pixmaps/cielo_mio.png", mode = "644" },
+    { source = "assets/logo.png", dest = "/usr/share/icons/hicolor/256x256/apps/cielo_mio.png", mode = "644" },
+]
+
+[profile.release]
+opt-level = 3          # High performance for XBRL parsing & rendering (use "s" if small size is priority)
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+debug = false
+incremental = false
+
+# Fast incremental dev compilation with helpful stack traces
+[profile.dev]
+incremental = true
+debug = 1             # Line tables only: fast linking while preserving line numbers on panics
+
+# Build dependencies with optimizations for smooth GUI rendering in dev
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+
+[dependencies]
+# ==============================================================================
+# 1. Native Desktop GUI & Visualization (egui ecosystem aligned to 0.36.2)
+# ==============================================================================
+eframe = { version = "0.36.2", default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "wayland",
+    "x11",
+] }
+egui = "0.36.2"
+egui_extras = { version = "0.36.2", features = ["all_loaders", "image"] }
+egui_plot = "0.37.0"
+image = { version = "0.25.10", default-features = false, features = [
+    "png",
+    "jpeg",
+] }
+rfd = "0.17.2"
+
+# ==============================================================================
+# 2. Async Runtime & Concurrency
+# ==============================================================================
+tokio = { version = "1.53.2", features = ["full"] }
+tokio-util = "0.7.19"
+futures-util = "0.3.34"
+
+# ==============================================================================
+# 3. HTTP Client (BSE / NSE Crawlers & LLM APIs)
+# ==============================================================================
+reqwest = { version = "0.13.5", features = [
+    "cookies",
+    "stream",
+    "json",
+    "form",
+    "gzip",
+    "query",
+] }
+
+# ==============================================================================
+# 4. Database & Storage (PostgreSQL with Connection Pooling)
+# ==============================================================================
+sqlx = { version = "0.9.0", features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "chrono",
+    "uuid",
+    "rust_decimal",
+] }
+
+# ==============================================================================
+# 5. Serialization & Wire Formats
+# ==============================================================================
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+
+# ==============================================================================
+# 6. XML Parsing & Financial Math
+# ==============================================================================
+quick-xml = "0.42.0"
+rust_decimal = "1.43.0"
+
+# ==============================================================================
+# 7. Utilities, Config & Domain Types
+# ==============================================================================
+chrono = { version = "0.4.45", features = ["serde"] }
+uuid = { version = "1.27.0", features = ["v7", "serde"] }
+regex = "1.13.1"
+thiserror = "2.0.21"
+keyring = { version = "4.2.0", features = [
+    "zbus-secret-service-keyring-store",
+    "windows-native-keyring-store",
+    "apple-native-keyring-store",
+] }
+toml = "1.1.6"
+
