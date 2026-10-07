@@ -4,4 +4,3 @@
 .env
 /downloads_test
 /downloads
-*.sql
