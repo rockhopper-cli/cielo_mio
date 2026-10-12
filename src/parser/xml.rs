@@ -33,8 +33,30 @@ fn is_valid_xml_entity(remainder: &str) -> bool {
     false
 }
 
+/// Checks whether the string requires repair (avoids cloning 95% of valid XML files)
+fn needs_sanitization(raw: &str) -> bool {
+    let mut chars = raw.char_indices().peekable();
+    while let Some((idx, ch)) = chars.next() {
+        match ch as u32 {
+            0x00..=0x08 | 0x0B..=0x0C | 0x0E..=0x1F | 0x7F..=0x84 | 0x86..=0x9F => return true,
+            _ => {}
+        }
+        if ch == '&' {
+            let remainder = &raw[idx + 1..];
+            if !is_valid_xml_entity(remainder) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 pub fn sanitize_xml_string(raw: &str) -> String {
-    let mut result = String::with_capacity(raw.len());
+    if !needs_sanitization(raw) {
+        return raw.to_string();
+    }
+
+    let mut result = String::with_capacity(raw.len() + 256);
     let mut chars = raw.char_indices().peekable();
 
     while let Some((idx, ch)) = chars.next() {
@@ -96,9 +118,23 @@ impl<'a> XbrlParser<'a> {
         &self,
         path: &Path,
     ) -> Result<ParsedFiling, Box<dyn std::error::Error + Send + Sync>> {
-        let raw_bytes = fs::read(path)?;
-        let raw_str = String::from_utf8_lossy(&raw_bytes);
-        let sanitized = sanitize_xml_string(&raw_str);
+        // Read directly into String or fallback gracefully without keeping raw bytes in scope
+        let raw_content = match fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(_) => {
+                let bytes = fs::read(path)?;
+                String::from_utf8_lossy(&bytes).into_owned()
+            }
+        };
+
+        // If no illegal characters are present, reuse `raw_content` directly!
+        let sanitized = if needs_sanitization(&raw_content) {
+            let s = sanitize_xml_string(&raw_content);
+            drop(raw_content); // Explicitly release the first buffer immediately
+            s
+        } else {
+            raw_content
+        };
 
         let mut reader = Reader::from_str(&sanitized);
         reader.config_mut().trim_text(true);
@@ -311,7 +347,7 @@ impl<'a> XbrlParser<'a> {
                     {
                         in_denominator = false;
                     } else if in_fact {
-                        let (prefix, mut local_name) = match tag_str.split_once(':') {
+                        let (_prefix, mut local_name) = match tag_str.split_once(':') {
                             Some((p, l)) => (p, l),
                             None => ("", tag_str),
                         };
@@ -321,7 +357,7 @@ impl<'a> XbrlParser<'a> {
                             local_name = local_name.trim_start_matches("in-capmkt_");
                         }
 
-                        if local_name == current_fact_tag || target_prefixes.contains(prefix) {
+                        if local_name == current_fact_tag {
                             let val = current_fact_buf.trim().to_string();
                             if !val.is_empty() {
                                 if current_fact_tag == "CorporateIdentityNumber" {

@@ -1,26 +1,51 @@
-use chrono::{Local, NaiveDate, NaiveTime};
+// src/downloader/filename.rs
+
+use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime};
 use regex::Regex;
 use std::path::Path;
 use std::sync::LazyLock;
 
-// Compile regexes once globally using LazyLock
 static RE_14: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{14})").unwrap());
 static RE_8_6: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{8})[_-]?(\d{6})").unwrap());
 static RE_8: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{8})").unwrap());
 static RE_6YM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(20\d{4})").unwrap());
+static RE_SANITIZE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"[\\/*?:"<>|]+"#).unwrap());
 
-/// Parses upload_date and upload_time from a filename string.
-/// Falls back to today's date and 00:00:00 if the filename doesn't contain a timestamp.
+/// Parses upload_date and upload_time from a filename or exchange timestamp string.
 pub fn parse_date_time_from_filename(filename: &str) -> (NaiveDate, NaiveTime) {
-    let base_name = Path::new(filename)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or(filename);
-
+    let t = filename.trim();
     let default_time = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
     let today = Local::now().date_naive();
 
-    // Pattern 1: 14-digit timestamp (DDMMYYYYHHMMSS)
+    // 1. FAST PATH: Check explicit Exchange API datetime strings (BSE DT_TM / submission dates)
+    const DATE_FORMATS: &[&str] = &[
+        "%d/%m/%Y %H:%M:%S",
+        "%Y/%m/%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%d-%m-%Y %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%d/%m/%Y",
+        "%Y/%m/%d",
+        "%Y-%m-%d",
+        "%d-%m-%Y",
+    ];
+
+    for fmt in DATE_FORMATS {
+        if let Ok(dt) = NaiveDateTime::parse_from_str(t, fmt) {
+            return (dt.date(), dt.time());
+        }
+        if let Ok(d) = NaiveDate::parse_from_str(t, fmt) {
+            return (d, default_time);
+        }
+    }
+
+    // 2. FILENAME PATH: Isolate filename stem to strip extensions (.xml, .pdf) & folder paths
+    let base_name = Path::new(t)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(t);
+
+    // Pattern 1: 14-digit contiguous timestamp (DDMMYYYYHHMMSS)
     if let Some(caps) = RE_14.captures(base_name) {
         if let Some(matched) = caps.get(1) {
             let s = matched.as_str();
@@ -31,16 +56,16 @@ pub fn parse_date_time_from_filename(filename: &str) -> (NaiveDate, NaiveTime) {
             let mi: u32 = s[10..12].parse().unwrap_or(0);
             let ss: u32 = s[12..14].parse().unwrap_or(0);
 
-            if let (Some(d), Some(t)) = (
+            if let (Some(d), Some(tm)) = (
                 NaiveDate::from_ymd_opt(yyyy, mm, dd),
                 NaiveTime::from_hms_opt(hh, mi, ss),
             ) {
-                return (d, t);
+                return (d, tm);
             }
         }
     }
 
-    // Pattern 2: 8-digit date + 6-digit time (e.g. YYYYMMDD_HHMMSS or DDMMYYYY_HHMMSS)
+    // Pattern 2: 8-digit date + 6-digit time (YYYYMMDD_HHMMSS or DDMMYYYY_HHMMSS)
     if let Some(caps) = RE_8_6.captures(base_name) {
         let date_part = caps.get(1).map(|m| m.as_str()).unwrap_or("");
         let time_part = caps.get(2).map(|m| m.as_str()).unwrap_or("");
@@ -99,8 +124,7 @@ pub fn parse_date_time_from_filename(filename: &str) -> (NaiveDate, NaiveTime) {
     (today, default_time)
 }
 
-/// Sanitizes company or report names into safe filesystem string
+/// Sanitizes company or report names into safe filesystem strings
 pub fn sanitize_filename(s: &str) -> String {
-    let re = Regex::new(r#"[\\/*?:"<>|]+"#).unwrap();
-    re.replace_all(s, "").trim().replace(' ', "_")
+    RE_SANITIZE.replace_all(s, "").trim().replace(' ', "_")
 }

@@ -192,11 +192,22 @@ fn render_badge_or_text(ui: &mut Ui, text: &str) {
             text,
         )
         .on_hover_text(text);
-    } else if text.chars().count() > 16 {
-        let truncated: String = text.chars().take(14).collect();
-        ui.label(RichText::new(format!("{}...", truncated)).small())
-            .on_hover_text(text);
     } else {
-        ui.label(RichText::new(text).small());
+        // Zero-allocation UTF-8 length inspection: stops evaluating at the 17th character
+        let mut char_iter = text.char_indices();
+        let char_14_byte_idx = char_iter.nth(13).map(|(i, _)| i);
+        let has_more_than_16 = char_iter.nth(2).is_some();
+
+        if has_more_than_16 {
+            if let Some(byte_idx) = char_14_byte_idx {
+                let slice = &text[..byte_idx];
+                ui.label(RichText::new(format!("{slice}...")).small())
+                    .on_hover_text(text);
+            } else {
+                ui.label(RichText::new(text).small());
+            }
+        } else {
+            ui.label(RichText::new(text).small());
+        }
     }
 }

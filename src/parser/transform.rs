@@ -249,7 +249,10 @@ impl FormDictionary {
                 unit_reference: fact.unit_ref.clone(),
                 standard_unit_reference: final_std_unit,
                 decimals: fact.decimals,
-                standard_raw_value: Some(clean_val.to_string()),
+                standard_raw_value: fact
+                    .standard_value
+                    .map(|v| v.to_string())
+                    .or_else(|| Some(clean_val.to_string())),
                 standard_numeric_value: fact.standard_value,
             });
         }

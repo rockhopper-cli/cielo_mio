@@ -1,0 +1,59 @@
+.
+├── assets
+│   ├── cielo_mio.desktop
+│   ├── InclusiveSans-VariableFont_wght.ttf
+│   └── logo.png
+├── Cargo.lock
+├── Cargo.toml
+├── delete_create_brsr_tables.sql
+├── README.md
+├── src
+│   ├── ai
+│   │   ├── agent.rs
+│   │   ├── client.rs
+│   │   ├── mod.rs
+│   │   └── tools.rs
+│   ├── app
+│   │   ├── ai_drawer.rs
+│   │   ├── logs_panel.rs
+│   │   ├── mod.rs
+│   │   ├── state.rs
+│   │   ├── tab_analytics
+│   │   │   ├── benchmarking.rs
+│   │   │   ├── charts.rs
+│   │   │   ├── controls.rs
+│   │   │   ├── data.rs
+│   │   │   ├── mod.rs
+│   │   │   └── pillars.rs
+│   │   ├── tab_config.rs
+│   │   ├── tab_download.rs
+│   │   └── tab_form_viewer
+│   │       ├── formatter.rs
+│   │       ├── mod.rs
+│   │       ├── nav_tree.rs
+│   │       ├── profile.rs
+│   │       ├── question_cards.rs
+│   │       ├── report_view.rs
+│   │       └── section_b_matrix.rs
+│   ├── config.rs
+│   ├── container.rs
+│   ├── downloader
+│   │   ├── db.rs
+│   │   ├── engine.rs
+│   │   ├── filename.rs
+│   │   ├── mod.rs
+│   │   ├── scrapers.rs
+│   │   ├── streaming.rs
+│   │   └── types.rs
+│   ├── main.rs
+│   ├── parser
+│   │   ├── industry.rs
+│   │   ├── ingestion.rs
+│   │   ├── mod.rs
+│   │   ├── transform.rs
+│   │   ├── units.rs
+│   │   └── xml.rs
+│   └── security.rs
+└── structure.txt
+
+9 directories, 48 files

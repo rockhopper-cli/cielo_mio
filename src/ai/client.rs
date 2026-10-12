@@ -127,6 +127,7 @@ impl LlmClient {
                 if finish_reason != "STOP"
                     && finish_reason != "MAX_TOKENS"
                     && finish_reason != "UNKNOWN"
+                    && finish_reason != "FINISH_REASON_UNSPECIFIED"
                 {
                     return Err(format!(
                         "Gemini generation halted prematurely (finishReason: {}).",

@@ -94,7 +94,7 @@ pub struct UnitRegistry {
 impl UnitRegistry {
     pub async fn load_from_db(pool: &PgPool) -> Result<Self, sqlx::Error> {
         let rows =
-            sqlx::query("SELECT raw_unit, canonical_unit, conversion_factor FROM unit_conversions")
+            sqlx::query("SELECT raw_unit, canonical_unit, conversion_factor::double precision as conversion_factor FROM unit_conversions")
                 .fetch_all(pool)
                 .await?;
 
@@ -147,7 +147,9 @@ impl UnitRegistry {
         // Exact match or fallback without trailing 'S'
         let mut matched = self.conversions.get(&unit_key);
         if matched.is_none() && unit_key.ends_with('S') && unit_key != "PPM" {
-            matched = self.conversions.get(unit_key.trim_end_matches('S'));
+            if let Some(stripped) = unit_key.strip_suffix('S') {
+                matched = self.conversions.get(stripped);
+            }
         }
 
         if let Some((to_unit, factor)) = matched {

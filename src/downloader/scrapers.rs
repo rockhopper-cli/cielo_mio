@@ -2,7 +2,7 @@
 
 use crate::downloader::filename::{parse_date_time_from_filename, sanitize_filename};
 use crate::downloader::types::{DownloadConfig, DownloadEvent, FileType, Market, PendingFile};
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 use reqwest::header::{
     ACCEPT, ACCEPT_LANGUAGE, CONNECTION, HeaderMap, HeaderValue, REFERER, USER_AGENT,
 };
@@ -46,8 +46,8 @@ pub async fn fetch_bse_records(
     to_d: NaiveDate,
     config: &DownloadConfig,
 ) -> Result<Vec<PendingFile>, String> {
-    let from_str = format!("{}/{}/{}", from_d.year(), from_d.month(), from_d.day());
-    let to_str = format!("{}/{}/{}", to_d.year(), to_d.month(), to_d.day());
+    let from_str = from_d.format("%Y/%m/%d").to_string();
+    let to_str = to_d.format("%Y/%m/%d").to_string();
 
     let query_params = [
         ("Flag", "43"),

@@ -7,18 +7,32 @@ pub fn calculate_sector_median<F>(state: &AppState, sector: &str, extractor: &F)
 where
     F: Fn(&CompanyEsgMetrics) -> Option<f64>,
 {
-    let mut values: Vec<f64> = state
+    use std::collections::HashMap;
+    let mut latest_by_cin: HashMap<&str, &CompanyEsgMetrics> = HashMap::new();
+
+    for m in state
         .analytics
         .metrics
         .iter()
         .filter(|m| m.industry_sector == sector)
-        .filter_map(extractor)
-        .collect();
+    {
+        latest_by_cin
+            .entry(&m.corporate_id_number)
+            .and_modify(|existing| {
+                if m.fy_start > existing.fy_start {
+                    *existing = m;
+                }
+            })
+            .or_insert(m);
+    }
 
+    let mut values: Vec<f64> = latest_by_cin
+        .values()
+        .filter_map(|m| extractor(m))
+        .collect();
     if values.is_empty() {
         return 0.0;
     }
-
     values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let mid = values.len() / 2;
     if values.len() % 2 == 0 {

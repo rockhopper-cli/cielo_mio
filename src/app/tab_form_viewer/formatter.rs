@@ -109,9 +109,13 @@ pub fn render_value_cell(
         || raw_trimmed.starts_with("http://")
         || raw_trimmed.starts_with("https://")
     {
-        let display_url = if raw_trimmed.chars().take(37).count() > 36 {
-            let prefix: String = raw_trimmed.chars().take(33).collect();
-            format!("{}... ↗", prefix)
+        let display_url = if raw_trimmed.len() > 36 {
+            let boundary = raw_trimmed
+                .char_indices()
+                .nth(33)
+                .map(|(i, _)| i)
+                .unwrap_or(33);
+            format!("{}... ↗", &raw_trimmed[..boundary])
         } else {
             format!("{} ↗", raw_trimmed)
         };
