@@ -21,6 +21,7 @@ pub enum ActiveTab {
     FormViewer,
     Analytics,
     Config,
+    About,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

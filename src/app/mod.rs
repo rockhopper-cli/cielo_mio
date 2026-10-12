@@ -3,6 +3,7 @@
 pub mod ai_drawer;
 pub mod logs_panel;
 pub mod state;
+pub mod tab_about;
 pub mod tab_analytics;
 pub mod tab_config;
 pub mod tab_download;
@@ -162,6 +163,8 @@ impl eframe::App for BrsrApp {
                 }
                 FormViewerEvent::Error(err) => {
                     self.state.form_viewer.is_loading_facts = false;
+                    self.state.form_viewer.template_loaded = false; 
+                    self.state.form_viewer.filings_loaded = false;
                     self.state.add_log(format!("[ERROR] Form Viewer: {}", err));
                 }
             }
@@ -260,6 +263,7 @@ impl eframe::App for BrsrApp {
                         (ActiveTab::FormViewer, "📄", "BRSR Form Explorer"),
                         (ActiveTab::Analytics, "📊", "ESG Analytics"),
                         (ActiveTab::Config, "⚙", "Settings"),
+                        (ActiveTab::About, "ℹ", "About"),
                     ];
 
                     for (tab, icon, label) in nav_items {
@@ -384,6 +388,7 @@ impl eframe::App for BrsrApp {
             ActiveTab::FormViewer => tab_form_viewer::render(ui, &mut self.state),
             ActiveTab::Analytics => tab_analytics::render(ui, &mut self.state),
             ActiveTab::Config => tab_config::render(ui, &mut self.state),
+            ActiveTab::About => tab_about::render(ui, &mut self.state),
         });
 
         // 10. Request repaint with ~25 FPS pacing while background tasks are active
