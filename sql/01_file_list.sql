@@ -1,34 +1,31 @@
--- ============================================================================
--- 01_file_list.sql
--- Download & Ingestion State Machine Table
--- ============================================================================
-
+-- create table - Download & Ingestion State Machine Table
 CREATE TABLE file_list (
     file_id UUID PRIMARY KEY DEFAULT uuidv7(),
     file_name VARCHAR(255) NOT NULL UNIQUE,
-    stock_market VARCHAR(50) NOT NULL, -- 'BSE' or 'NSE'
+    stock_market VARCHAR(50) NOT NULL,
+    symbol VARCHAR(50) NULL,
+    scrip_code VARCHAR(20) NULL,
     upload_date DATE NOT NULL,
     upload_time TIME WITHOUT TIME ZONE NOT NULL,
-    file_type VARCHAR(50) NOT NULL,    -- 'PDF' or 'XML'
+    file_type VARCHAR(50) NOT NULL,
     mapped BOOLEAN NOT NULL DEFAULT FALSE,
-    unmapped_reason TEXT NULL,         -- Fix B: TEXT prevents crashes on long error strings
+    unmapped_reason TEXT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
 );
 
--- Indexes
-CREATE INDEX idx_file_list_lookup
-ON file_list (file_name, mapped);
+-- index
+CREATE INDEX idx_file_list_lookup ON file_list (file_name, mapped);
+CREATE INDEX idx_file_list_market_date ON file_list (stock_market, upload_date DESC);
+CREATE INDEX idx_file_list_pending_xml ON file_list (upload_date DESC, file_name ASC)
+WHERE file_type = 'XML' AND mapped = FALSE AND unmapped_reason IS NULL;
 
-CREATE INDEX idx_file_list_market_date
-ON file_list (stock_market, upload_date DESC);
-
--- ----------------------------------------------------------------------------
--- 1. FILE_LIST (10 Comments)
--- ----------------------------------------------------------------------------
-COMMENT ON TABLE file_list IS 'Tracks all downloaded BRSR XML/PDF files, hash states, and ingestion status';
+-- comments 12
+COMMENT ON TABLE file_list IS 'Tracks all downloaded BRSR XML/PDF files, exchange tickers, hash states, and ingestion status';
 COMMENT ON COLUMN file_list.file_id IS 'Unique UUID primary key for each downloaded file';
 COMMENT ON COLUMN file_list.file_name IS 'Downloaded file name (pdf or xml)';
 COMMENT ON COLUMN file_list.stock_market IS 'Stock exchange source - BSE or NSE';
+COMMENT ON COLUMN file_list.symbol IS 'Authoritative NSE ticker symbol captured from exchange download feed';
+COMMENT ON COLUMN file_list.scrip_code IS 'Authoritative BSE scrip code captured from exchange download feed';
 COMMENT ON COLUMN file_list.upload_date IS 'Upload date derived from the file name';
 COMMENT ON COLUMN file_list.upload_time IS 'Upload time derived from the file name';
 COMMENT ON COLUMN file_list.file_type IS 'File format - PDF or XML';

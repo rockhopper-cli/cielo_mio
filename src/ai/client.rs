@@ -45,13 +45,12 @@ impl LlmClient {
 
                 let resp = self.http.post(&url).json(&payload).send().await?;
                 if !resp.status().is_success() {
-                    let status = resp.status(); // ✅ Capture status BEFORE .text() consumes resp
+                    let status = resp.status();
                     let err_text = resp.text().await.unwrap_or_default();
                     return Err(format!("Ollama HTTP {}: {}", status, err_text).into());
                 }
 
                 let body: serde_json::Value = resp.json().await?;
-
                 if let Some(err) = body.get("error").and_then(|e| e.as_str()) {
                     return Err(format!("Ollama error: {}", err).into());
                 }
@@ -67,11 +66,10 @@ impl LlmClient {
             LlmProvider::Gemini { model, api_key } => {
                 let clean_model = model.trim_start_matches("models/");
                 let url = format!(
-                    "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-                    clean_model, api_key
+                    "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+                    clean_model
                 );
 
-                // Use Gemini v1beta native system_instruction structure
                 let payload = json!({
                     "system_instruction": {
                         "parts": [{ "text": system_context }]
@@ -82,16 +80,21 @@ impl LlmClient {
                     }]
                 });
 
-                let resp = self.http.post(&url).json(&payload).send().await?;
+                let resp = self
+                    .http
+                    .post(&url)
+                    .header("x-goog-api-key", api_key)
+                    .json(&payload)
+                    .send()
+                    .await?;
                 if !resp.status().is_success() {
-                    let status = resp.status(); // ✅ Capture status BEFORE .text() consumes resp
+                    let status = resp.status();
                     let err_text = resp.text().await.unwrap_or_default();
                     return Err(format!("Gemini API error (HTTP {}): {}", status, err_text).into());
                 }
 
                 let body: serde_json::Value = resp.json().await?;
 
-                // 1. Check for API-level error block
                 if let Some(err_msg) = body
                     .get("error")
                     .and_then(|e| e.get("message"))
@@ -100,19 +103,16 @@ impl LlmClient {
                     return Err(format!("Gemini API error: {}", err_msg).into());
                 }
 
-                // 2. Check for Prompt-level safety block
-                if let Some(feedback) = body.get("promptFeedback") {
-                    if let Some(block_reason) = feedback.get("blockReason").and_then(|r| r.as_str())
-                    {
-                        return Err(format!(
-                            "Prompt blocked by Gemini safety filters: {}",
-                            block_reason
-                        )
-                        .into());
-                    }
+                if let Some(feedback) = body.get("promptFeedback")
+                    && let Some(block_reason) = feedback.get("blockReason").and_then(|r| r.as_str())
+                {
+                    return Err(format!(
+                        "Prompt blocked by Gemini safety filters: {}",
+                        block_reason
+                    )
+                    .into());
                 }
 
-                // 3. Inspect Candidates array
                 let candidates = match body.get("candidates").and_then(|c| c.as_array()) {
                     Some(arr) if !arr.is_empty() => arr,
                     _ => return Err("Gemini produced no candidates for this prompt.".into()),
@@ -136,16 +136,27 @@ impl LlmClient {
                     .into());
                 }
 
-                // 4. Extract generated text
-                if let Some(text) = first_candidate["content"]["parts"][0]["text"].as_str() {
-                    Ok(text.to_string())
-                } else {
-                    Err(format!(
-                        "Gemini candidate contains no text parts (finishReason: {}).",
-                        finish_reason
-                    )
-                    .into())
+                if let Some(parts) = first_candidate
+                    .get("content")
+                    .and_then(|c| c.get("parts"))
+                    .and_then(|p| p.as_array())
+                {
+                    let combined: String = parts
+                        .iter()
+                        .filter(|p| !p.get("thought").and_then(|t| t.as_bool()).unwrap_or(false))
+                        .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !combined.is_empty() {
+                        return Ok(combined);
+                    }
                 }
+
+                Err(format!(
+                    "Gemini candidate contains no text parts (finishReason: {}).",
+                    finish_reason
+                )
+                .into())
             }
         }
     }

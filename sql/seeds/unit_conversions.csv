@@ -1,0 +1,38 @@
+metric_category,raw_unit,canonical_unit,conversion_factor,notes
+Energy,GJ,GJ,1,Base canonical unit for energy
+Energy,GIGAJOULE,GJ,1,Alternative standard label
+Energy,MJ,GJ,0.001,1 Megajoule = 0.001 GJ
+Energy,MEGAJOULE,GJ,0.001,Megajoule full word
+Energy,MWH,GJ,3.6,1 Megawatt hour = 3.6 GJ
+Energy,MEGAWATTHOUR,GJ,3.6,Megawatt hour full word
+Energy,KWH,GJ,0.0036,1 Kilowatt hour = 0.0036 GJ
+Energy,KILOWATTHOUR,GJ,0.0036,Kilowatt hour full word
+Energy,TOE,GJ,41.868,1 Tonne of Oil Equivalent = 41.868 GJ
+Energy,TONNESOFOILEQUIVALENT,GJ,41.868,TOE full word
+Energy,GCAL,GJ,4.184,1 Gigacalorie = 4.184 GJ
+Energy,GIGACALORIE,GJ,4.184,Gigacalorie full word
+Mass,T,t,1,Base canonical unit for mass
+Mass,TONNE,t,1,Metric Tonne alternative
+Mass,METRICTONNE,t,1,Metric Tonne full word
+Mass,KG,t,0.001,1 Kilogram = 0.001 Tonne
+Mass,KILOGRAM,t,0.001,Kilogram full word
+Mass,G,t,0.000001,1 Gram = 0.000001 Tonne
+Mass,GRAM,t,0.000001,Gram full word
+Mass,MG,t,0.000000001,1 Milligram = 1e-9 Tonne
+Mass,QUINTAL,t,0.1,1 Quintal = 0.1 Tonne
+Mass,LBS,t,0.00045359237,1 Pound = 0.00045359237 Tonne
+Volume,KL,KL,1,Base canonical unit for volume
+Volume,KILOLITER,KL,1,Kiloliter alternative
+Volume,KILOLITRE,KL,1,Kilolitre UK spelling
+Volume,M3,KL,1,1 Cubic meter = 1 Kiloliter
+Volume,CUBICMETER,KL,1,Cubic meter full word
+Volume,L,KL,0.001,1 Liter = 0.001 Kiloliter
+Volume,LITER,KL,0.001,Liter full word
+Volume,LITRE,KL,0.001,Litre UK spelling
+Volume,ML,KL,1000,1 Million Liters = 1000 Kiloliters
+Volume,MILLIONLITER,KL,1000,Million liter full word
+Volume,GAL,KL,0.00378541,1 US Gallon = 0.00378541 Kiloliters
+GHG,TCO2E,t,1,Tonne of CO2 equivalent
+GHG,TONNECO2E,t,1,Tonne CO2 equivalent full word
+GHG,KGCO2E,t,0.001,1 Kilogram of CO2 equivalent = 0.001 Tonne
+GHG,GTCO2E,t,1000000000,1 Gigatonne CO2 equivalent = 1e9 Tonnes

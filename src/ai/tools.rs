@@ -1,7 +1,9 @@
 // src/ai/tools.rs
 
+use rust_decimal::prelude::ToPrimitive;
 use sqlx::{PgPool, Row};
 use std::fmt::Write;
+use uuid::Uuid;
 
 pub struct McpTools {
     pool: PgPool,
@@ -10,6 +12,29 @@ pub struct McpTools {
 impl McpTools {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
+    }
+
+    pub async fn resolve_entity_id(&self, query: &str) -> Result<Option<Uuid>, sqlx::Error> {
+        let clean = query.trim();
+        if clean.is_empty() {
+            return Ok(None);
+        }
+        let pattern = format!("%{}%", clean);
+        let row = sqlx::query(
+            r#"
+            SELECT entity_id
+            FROM entity_list
+            WHERE corporate_id_number ILIKE $1 OR company_name ILIKE $1
+            ORDER BY (corporate_id_number ILIKE $2) DESC, financial_year_start DESC NULLS LAST
+            LIMIT 1;
+            "#,
+        )
+        .bind(&pattern)
+        .bind(clean)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| r.get("entity_id")))
     }
 
     /// Fetches company profile and basic metadata by company name or CIN
@@ -24,18 +49,19 @@ impl McpTools {
                 company_name, corporate_id_number, address_registered_office,
                 company_email, financial_year_start, financial_year_end,
                 paid_up_shares_value, stock_market,
-                COALESCE(industry_sector, 'Diversified') as industry_sector,
+                COALESCE(industry_sector, 'Unclassified') as industry_sector,
                 COALESCE(industry_division, 'General') as industry_division
             FROM entity_list
             WHERE corporate_id_number ILIKE $1 
                OR company_name ILIKE $1
-            ORDER BY financial_year_start DESC NULLS LAST
+            ORDER BY (corporate_id_number ILIKE $2) DESC, financial_year_start DESC NULLS LAST
             LIMIT 1;
         "#;
 
         let pattern = format!("%{}%", clean);
         let row = sqlx::query(sql)
-            .bind(pattern)
+            .bind(&pattern)
+            .bind(clean)
             .fetch_optional(&self.pool)
             .await?;
 
@@ -74,7 +100,7 @@ impl McpTools {
                 )
                 .unwrap();
                 if let Some(val) = paid_up {
-                    let cr_val = val.to_string().parse::<f64>().unwrap_or(0.0) / 10_000_000.0;
+                    let cr_val = val.to_f64().unwrap_or(0.0) / 10_000_000.0;
                     writeln!(out, "  • Paid-up Capital: ₹ {:.2} Cr", cr_val).unwrap();
                 }
                 Ok(out)
@@ -86,7 +112,7 @@ impl McpTools {
         }
     }
 
-    /// Queries standardized disclosures for an entity matching a specific ESG keyword or tag
+    /// Queries standardized disclosures for the resolved entity matching an ESG keyword
     pub async fn query_company_metrics(
         &self,
         entity_query: &str,
@@ -94,13 +120,16 @@ impl McpTools {
     ) -> Result<String, sqlx::Error> {
         let clean_ent = entity_query.trim();
         let clean_kw = keyword.trim();
-        if clean_ent.is_empty() {
+        if clean_ent.is_empty() || clean_kw.is_empty() {
             return Ok(String::new());
         }
 
+        let Some(entity_id) = self.resolve_entity_id(clean_ent).await? else {
+            return Ok(String::new());
+        };
+
         let sql = r#"
             SELECT 
-                e.company_name,
                 f.section,
                 f.principle_number,
                 COALESCE(f.friendly_grouping, 'general') as friendly_grouping,
@@ -110,21 +139,21 @@ impl McpTools {
                 f.standard_numeric_value,
                 f.standard_unit_reference
             FROM brsr_facts f
-            JOIN entity_list e ON f.client_uuid = e.entity_id
-            WHERE (e.corporate_id_number ILIKE $1 OR e.company_name ILIKE $1)
+            WHERE f.client_uuid = $1
               AND (f.friendly_grouping ILIKE $2
                    OR f.standard_indicator_capmkt ILIKE $2 
                    OR f.indicator_capmkt ILIKE $2
                    OR f.raw_value ILIKE $2)
-            ORDER BY f.section, f.principle_number, f.friendly_grouping, f.standard_indicator_capmkt
-            LIMIT 25;
+            ORDER BY
+                CASE WHEN f.standard_context_reference ~* '(_p?py|previous|prior)' THEN 1 ELSE 0 END ASC,
+                f.section, f.principle_number, f.friendly_grouping, f.standard_indicator_capmkt
+            LIMIT 40;
         "#;
 
-        let comp_pattern = format!("%{}%", clean_ent);
         let kw_pattern = format!("%{}%", clean_kw);
 
         let rows = sqlx::query(sql)
-            .bind(comp_pattern)
+            .bind(entity_id)
             .bind(kw_pattern)
             .fetch_all(&self.pool)
             .await?;

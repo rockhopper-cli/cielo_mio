@@ -1,8 +1,4 @@
--- ============================================================================
--- 02_form_master.sql
--- Master Taxonomy Dictionary & Dynamic Context Rules
--- ============================================================================
-
+-- create table - Master Taxonomy Dictionary & Dynamic Context Rules
 CREATE TABLE form_master (
     form_id UUID PRIMARY KEY DEFAULT uuidv7(),
     question_key VARCHAR(50) NOT NULL,
@@ -43,20 +39,12 @@ CREATE TABLE form_master (
     comments TEXT NULL
 );
 
--- Indexes
+-- index
+CREATE INDEX idx_form_master_join_keys ON form_master (indicator_capmkt, context_reference);
+CREATE INDEX idx_form_master_standard_keys ON form_master (standard_indicator_capmkt, standard_context_reference);
+CREATE INDEX idx_form_master_grouping ON form_master (friendly_grouping);
 
-CREATE INDEX idx_form_master_join_keys
-ON form_master (indicator_capmkt, context_reference);
-
-CREATE INDEX idx_form_master_standard_keys
-ON form_master (standard_indicator_capmkt, standard_context_reference);
-
-CREATE INDEX idx_form_master_grouping
-ON form_master (friendly_grouping);
-
--- ----------------------------------------------------------------------------
--- 2. FORM_MASTER (38 Comments)
--- ----------------------------------------------------------------------------
+-- comments 33
 COMMENT ON TABLE form_master IS 'Master taxonomy dictionary mapping SEBI in-capmkt tags, datatypes, and dynamic axis rules';
 COMMENT ON COLUMN form_master.form_id IS 'UUID for each form question entry';
 COMMENT ON COLUMN form_master.question_key IS 'NOT UNIQUE - identifier based on section, principle, sub-section/indicator, question number, sub-questions, and order';

@@ -5,55 +5,105 @@
 │   └── logo.png
 ├── Cargo.lock
 ├── Cargo.toml
-├── delete_create_brsr_tables.sql
 ├── README.md
+├── sql
+│   ├── 00_teardown_and_extensions.sql
+│   ├── 01_file_list.sql
+│   ├── 02_form_master.sql
+│   ├── 03_entity_list.sql
+│   ├── 04_brsr_facts.sql
+│   ├── 05_unit_conversions.sql
+│   ├── 06_exchange_industry_master.sql
+│   ├── 07_geo_pincode.sql
+│   ├── 08_analytics_views.sql
+│   ├── 09_cluster_tuning.sql
+│   ├── 99_query_data_dictionary.sql
+│   ├── brsr_delete_create.sh
+│   └── seeds
+│       ├── form_master_rename_to_use.csv
+│       └── pin_code.csv
 ├── src
 │   ├── ai
 │   │   ├── agent.rs
 │   │   ├── client.rs
 │   │   ├── mod.rs
 │   │   └── tools.rs
-│   ├── app
-│   │   ├── ai_drawer.rs
-│   │   ├── logs_panel.rs
+│   ├── domain
+│   │   ├── download.rs
+│   │   ├── entity.rs
+│   │   ├── facts.rs
 │   │   ├── mod.rs
-│   │   ├── state.rs
-│   │   ├── tab_analytics
-│   │   │   ├── benchmarking.rs
-│   │   │   ├── charts.rs
-│   │   │   ├── controls.rs
-│   │   │   ├── data.rs
-│   │   │   ├── mod.rs
-│   │   │   └── pillars.rs
-│   │   ├── tab_config.rs
-│   │   ├── tab_download.rs
-│   │   └── tab_form_viewer
-│   │       ├── formatter.rs
-│   │       ├── mod.rs
-│   │       ├── nav_tree.rs
-│   │       ├── profile.rs
-│   │       ├── question_cards.rs
-│   │       ├── report_view.rs
-│   │       └── section_b_matrix.rs
-│   ├── config.rs
-│   ├── container.rs
-│   ├── downloader
-│   │   ├── db.rs
-│   │   ├── engine.rs
-│   │   ├── filename.rs
-│   │   ├── mod.rs
-│   │   ├── scrapers.rs
-│   │   ├── streaming.rs
-│   │   └── types.rs
+│   │   ├── taxonomy.rs
+│   │   └── units.rs
+│   ├── lib.rs
 │   ├── main.rs
-│   ├── parser
-│   │   ├── industry.rs
+│   ├── pipeline
+│   │   ├── geocoder.rs
 │   │   ├── ingestion.rs
 │   │   ├── mod.rs
-│   │   ├── transform.rs
-│   │   ├── units.rs
-│   │   └── xml.rs
-│   └── security.rs
+│   │   ├── scrapers
+│   │   │   ├── engine.rs
+│   │   │   ├── mod.rs
+│   │   │   ├── scraper.rs
+│   │   │   └── streaming.rs
+│   │   └── xbrl
+│   │       ├── mod.rs
+│   │       ├── parser.rs
+│   │       └── transform.rs
+│   ├── storage
+│   │   ├── mod.rs
+│   │   ├── pool.rs
+│   │   └── repository
+│   │       ├── analytics.rs
+│   │       ├── entities.rs
+│   │       ├── facts.rs
+│   │       ├── files.rs
+│   │       ├── mod.rs
+│   │       └── taxonomy.rs
+│   ├── system
+│   │   ├── config.rs
+│   │   ├── container.rs
+│   │   ├── mod.rs
+│   │   └── security.rs
+│   └── ui
+│       ├── events.rs
+│       ├── mod.rs
+│       ├── shell
+│       │   ├── ai_drawer.rs
+│       │   ├── logs_panel.rs
+│       │   ├── mod.rs
+│       │   └── nav_rail.rs
+│       ├── state
+│       │   ├── ai.rs
+│       │   ├── analytics.rs
+│       │   ├── export.rs
+│       │   ├── form_viewer.rs
+│       │   ├── geo.rs
+│       │   └── mod.rs
+│       └── views
+│           ├── about.rs
+│           ├── analytics
+│           │   ├── benchmarking.rs
+│           │   ├── charts.rs
+│           │   ├── controls.rs
+│           │   ├── data.rs
+│           │   ├── mod.rs
+│           │   └── pillars.rs
+│           ├── config.rs
+│           ├── download.rs
+│           ├── export.rs
+│           ├── form_viewer
+│           │   ├── components.rs
+│           │   ├── formatter.rs
+│           │   ├── mod.rs
+│           │   ├── nav_tree.rs
+│           │   ├── profile.rs
+│           │   ├── question_cards.rs
+│           │   ├── report_view.rs
+│           │   ├── section_b_matrix.rs
+│           │   └── visibility.rs
+│           ├── geo.rs
+│           └── mod.rs
 └── structure.txt
 
-9 directories, 48 files
+19 directories, 88 files

@@ -27,76 +27,73 @@ impl RagAgent {
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let mut context_buffer = String::new();
 
-        // 1. Fetch Verified Company Profile from PostgreSQL
         let lookup_key = if !cin.trim().is_empty() {
             cin.trim()
         } else {
             company_name.trim()
         };
 
-        if !lookup_key.is_empty() {
-            if let Ok(profile) = self.tools.get_company_profile(lookup_key).await {
-                context_buffer.push_str(&profile);
-                context_buffer.push('\n');
-            }
+        if !lookup_key.is_empty()
+            && let Ok(profile) = self.tools.get_company_profile(lookup_key).await
+        {
+            context_buffer.push_str(&profile);
+            context_buffer.push('\n');
         }
 
-        // 2. Dynamic Topic Keyword Extraction from User Query
         let query_lower = user_query.to_lowercase();
         let topic_keywords = [
-            ("emission", "emissions"),
-            ("ghg", "GHG emissions"),
-            ("scope 1", "Scope 1"),
-            ("scope 2", "Scope 2"),
-            ("scope 3", "Scope 3"),
-            ("water", "water withdrawal"),
-            ("energy", "energy consumption"),
-            ("renewable", "renewable energy"),
-            ("waste", "waste generated"),
-            ("female", "female gender diversity"),
-            ("women", "women workforce"),
-            ("director", "board directors"),
-            ("wage", "wages and remuneration"),
-            ("turnover", "employee turnover"),
-            ("injur", "work injuries"),
-            ("fatal", "fatalities"),
-            ("posh", "POSH sexual harassment"),
-            ("complaint", "statutory complaints"),
-            ("disciplinary", "disciplinary actions"),
-            ("wellbeing", "well-being spending"),
-            ("safety", "health and safety"),
-            ("training", "training and skill development"),
-            ("human right", "human rights"),
-            ("csr", "corporate social responsibility"),
+            ("scope 1", "Scope1"),
+            ("scope 2", "Scope2"),
+            ("scope 3", "Scope3"),
+            ("emission", "Emissions"),
+            ("ghg", "ghg"),
+            ("water", "Water"),
+            ("energy", "Energy"),
+            ("renewable", "Renewable"),
+            ("waste", "Waste"),
+            ("female", "Female"),
+            ("women", "Women"),
+            ("director", "Director"),
+            ("wage", "Wages"),
+            ("turnover", "Turnover"),
+            ("injur", "Injur"),
+            ("fatal", "Fatal"),
+            ("posh", "POSH"),
+            ("complaint", "Complaint"),
+            ("disciplinary", "Disciplinary"),
+            ("wellbeing", "WellBeing"),
+            ("well-being", "WellBeing"),
+            ("safety", "Safety"),
+            ("training", "Training"),
+            ("human right", "HumanRights"),
+            ("csr", "CSR"),
+            ("green credit", "GreenCredit"),
         ];
 
-        let mut matched_topics = Vec::new();
-        for (stem, label) in topic_keywords {
-            if query_lower.contains(stem) {
-                matched_topics.push((stem, label));
+        let mut matched_stems = Vec::new();
+        for (_phrase, stem) in topic_keywords {
+            if query_lower.contains(_phrase) && !matched_stems.contains(&stem) {
+                matched_stems.push(stem);
             }
         }
 
-        // Query database for up to 3 most relevant topics to avoid token bloat
-        for (stem, _) in matched_topics.iter().take(3) {
-            if !lookup_key.is_empty() {
-                if let Ok(facts) = self.tools.query_company_metrics(lookup_key, stem).await {
-                    if !facts.is_empty() {
-                        context_buffer.push_str(&facts);
-                        context_buffer.push('\n');
-                    }
+        if !lookup_key.is_empty() {
+            for stem in matched_stems.into_iter().take(6) {
+                if let Ok(facts) = self.tools.query_company_metrics(lookup_key, stem).await
+                    && !facts.is_empty()
+                {
+                    context_buffer.push_str(&facts);
+                    context_buffer.push('\n');
                 }
             }
         }
 
-        // 3. Inject In-Memory Disclosures from the active UI Viewer/Dashboard
         if !ui_context.trim().is_empty() {
             context_buffer.push_str("ACTIVE REPORT DISCLOSURES (CURRENT VIEW):\n");
             context_buffer.push_str(ui_context.trim());
             context_buffer.push('\n');
         }
 
-        // 4. Assemble Grounded System Instructions
         let system_instructions = format!(
             r#"You are an expert SEBI BRSR and ESG sustainability analyst.
 You are reviewing verified statutory filings for: {} (CIN: {}).
@@ -113,7 +110,6 @@ VERIFIED REPOSITORY DATA & REPORT DISCLOSURES:
             company_name, cin, context_buffer
         );
 
-        // 5. Query LLM with clean separation of system instructions and user prompt
         self.client.ask(&system_instructions, user_query).await
     }
 }
