@@ -325,7 +325,7 @@ pub async fn execute_ingestion(
         Err(e) => {
             let _ = event_tx
                 .send(DownloadEvent::Log(format!(
-                    "[ERROR] Failed to load taxonomy dictionary (form_master): {}",
+                    "[ERROR] Failed to load taxonomy dictionary (xbrl_tag_rules): {}",
                     e
                 )))
                 .await;

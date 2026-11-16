@@ -52,28 +52,41 @@ pub async fn fetch_form_template(pool: &PgPool) -> Result<Vec<FormMasterItem>, s
         SELECT 
             question_key, section, principle_number, sub_section, indicator_type,
             question_in_form, question_number,
-            COALESCE(followup_question_first, '0') as followup_question_first,
-            COALESCE(followup_question_second, '0') as followup_question_second,
-            question_order, question_type, response_datatype,
-            COALESCE(contextref_increment, FALSE) as contextref_increment,
-            COALESCE(total_field, FALSE) as total_field,
+            COALESCE(followup_group, '0') AS followup_question_first,
+            '0'::varchar AS followup_question_second,
+            ROW_NUMBER() OVER (
+                PARTITION BY section, principle_number, sub_section, question_number
+                ORDER BY sort_order
+            )::smallint AS question_order,
+            CASE render_kind
+                WHEN 'heading' THEN 'question'
+                WHEN 'scalar'  THEN 'question'
+                ELSE 'detail'
+            END AS question_type,
+            response_datatype,
+            is_axis_increment AS contextref_increment,
+            FALSE AS total_field,
             friendly_grouping,
-            COALESCE(field_flag, 0)::smallint as field_flag,
-            COALESCE(anchor_reference, 0)::smallint as anchor_reference,
+            CASE render_kind
+                WHEN 'matrix_9p'  THEN 2::smallint
+                WHEN 'axis_col'   THEN 1::smallint
+                WHEN 'table_cell' THEN 1::smallint
+                ELSE 0::smallint
+            END AS field_flag,
+            0::smallint AS anchor_reference,
             append_to_field,
-            COALESCE(NULLIF(section_text, ''), 'SECTION ' || section) as section_text,
-            COALESCE(NULLIF(principle_text, ''), 'General') as principle_text,
-            COALESCE(NULLIF(sub_section_text, ''), 'General') as sub_section_text,
-            COALESCE(NULLIF(indicator_text, ''), 'General') as indicator_text,
+            COALESCE(NULLIF(section_text, ''), 'SECTION ' || section) AS section_text,
+            COALESCE(NULLIF(principle_text, ''), 'General') AS principle_text,
+            COALESCE(NULLIF(sub_section_text, ''), 'General') AS sub_section_text,
+            COALESCE(NULLIF(indicator_text, ''), 'General') AS indicator_text,
             question_text,
-            COALESCE(standard_indicator_capmkt, '') as standard_indicator_capmkt,
-            COALESCE(standard_context_reference, '') as standard_context_reference,
+            COALESCE(std_tag, '') AS standard_indicator_capmkt,
+            COALESCE(std_context, '') AS standard_context_reference,
             input_text,
-            COALESCE(visibility_dependence, '0') as visibility_dependence,
+            COALESCE(visibility_parent_key, '0') AS visibility_dependence,
             visibility_trigger
-        FROM form_master
-        WHERE (legacy = FALSE OR legacy IS NULL)
-        ORDER BY section, principle_number, sub_section, question_number, form_id;
+        FROM form_layout
+        ORDER BY sort_order ASC;
     "#;
 
     let rows = sqlx::query(sql).fetch_all(pool).await?;

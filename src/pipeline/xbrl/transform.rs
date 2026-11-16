@@ -20,22 +20,18 @@ impl FormDictionary {
         let rows = sqlx::query(
             r#"
             SELECT 
-                indicator_capmkt,
-                context_reference,
-                standard_indicator_capmkt,
-                standard_context_reference,
+                raw_tag AS indicator_capmkt,
+                raw_context AS context_reference,
+                std_tag AS standard_indicator_capmkt,
+                std_context AS standard_context_reference,
                 section,
                 principle_number,
                 sub_section,
                 indicator_type,
                 friendly_grouping,
-                contextref_increment
-            FROM form_master
-            WHERE indicator_capmkt IS NOT NULL 
-              AND context_reference IS NOT NULL 
-              AND indicator_capmkt != '' 
-              AND context_reference != ''
-            ORDER BY legacy ASC NULLS FIRST, form_id ASC;
+                is_axis_increment AS contextref_increment
+            FROM xbrl_tag_rules
+            ORDER BY is_legacy ASC, rule_id ASC;
             "#,
         )
         .fetch_all(pool)

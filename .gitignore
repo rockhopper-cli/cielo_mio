@@ -4,4 +4,8 @@
 .env
 /downloads_test
 /downloads
-form_master.csv
+xbrl_tag_rules.csv
+form_layout.csv
+cleaned_form_master.sql
+split_form_master.sql
+fix_cleanup.sh
