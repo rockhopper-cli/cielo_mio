@@ -9,49 +9,67 @@
 ├── sql
 │   ├── 00_teardown_and_extensions.sql
 │   ├── 01_file_list.sql
-│   ├── 02_form_master.sql
-│   ├── 03_entity_list.sql
-│   ├── 04_brsr_facts.sql
-│   ├── 05_unit_conversions.sql
-│   ├── 06_exchange_industry_master.sql
-│   ├── 07_geo_pincode.sql
-│   ├── 08_analytics_views.sql
-│   ├── 09_cluster_tuning.sql
-│   ├── 99_query_data_dictionary.sql
+│   ├── 02a_xbrl_tag_rules.sql
+│   ├── 02b_form_layout.sql
+│   ├── 03_industry_master.sql
+│   ├── 04_exchange_industry_master.sql
+│   ├── 05_geo_pincode.sql
+│   ├── 06_unit_conversions.sql
+│   ├── 07_entity_list.sql
+│   ├── 08_brsr_facts.sql
+│   ├── 09_analytics_views.sql
+│   ├── 10_cluster_tuning.sql
+│   ├── 99_data_dictionary.sql
 │   ├── brsr_delete_create.sh
-│   └── seeds
-│       ├── form_master_rename_to_use.csv
-│       └── pin_code.csv
+│   ├── seeds
+│   │   ├── form_layout_deletethispart.csv
+│   │   ├── industry_master.csv
+│   │   ├── pin_code.csv
+│   │   ├── unit_conversions.csv
+│   │   └── xbrl_tag_rules_deletethispart.csv
+│   └── text_sql
+│       ├── 00_teardown_and_extensions.txt
+│       ├── 01_file_list.txt
+│       ├── 02a_xbrl_tag_rules.txt
+│       ├── 02b_form_layout.txt
+│       ├── 03_industry_master.txt
+│       ├── 04_exchange_industry_master.txt
+│       ├── 05_geo_pincode.txt
+│       ├── 06_unit_conversions.txt
+│       ├── 07_entity_list.txt
+│       ├── 08_brsr_facts.txt
+│       ├── 09_analytics_views.txt
+│       ├── 10_cluster_tuning.txt
+│       └── 99_data_dictionary.txt
 ├── src
 │   ├── ai
 │   │   ├── agent.rs
 │   │   ├── client.rs
-│   │   ├── mod.rs
 │   │   └── tools.rs
+│   ├── ai.rs
 │   ├── domain
 │   │   ├── download.rs
 │   │   ├── entity.rs
 │   │   ├── facts.rs
-│   │   ├── mod.rs
 │   │   ├── taxonomy.rs
 │   │   └── units.rs
+│   ├── domain.rs
 │   ├── lib.rs
 │   ├── main.rs
 │   ├── pipeline
 │   │   ├── geocoder.rs
 │   │   ├── ingestion.rs
-│   │   ├── mod.rs
 │   │   ├── scrapers
 │   │   │   ├── engine.rs
-│   │   │   ├── mod.rs
 │   │   │   ├── scraper.rs
 │   │   │   └── streaming.rs
-│   │   └── xbrl
-│   │       ├── mod.rs
-│   │       ├── parser.rs
-│   │       └── transform.rs
+│   │   ├── scrapers.rs
+│   │   ├── xbrl
+│   │   │   ├── parser.rs
+│   │   │   └── transform.rs
+│   │   └── xbrl.rs
+│   ├── pipeline.rs
 │   ├── storage
-│   │   ├── mod.rs
 │   │   ├── pool.rs
 │   │   └── repository
 │   │       ├── analytics.rs
@@ -60,50 +78,57 @@
 │   │       ├── files.rs
 │   │       ├── mod.rs
 │   │       └── taxonomy.rs
+│   ├── storage.rs
 │   ├── system
 │   │   ├── config.rs
 │   │   ├── container.rs
-│   │   ├── mod.rs
 │   │   └── security.rs
-│   └── ui
-│       ├── events.rs
-│       ├── mod.rs
-│       ├── shell
-│       │   ├── ai_drawer.rs
-│       │   ├── logs_panel.rs
-│       │   ├── mod.rs
-│       │   └── nav_rail.rs
-│       ├── state
-│       │   ├── ai.rs
-│       │   ├── analytics.rs
-│       │   ├── export.rs
-│       │   ├── form_viewer.rs
-│       │   ├── geo.rs
-│       │   └── mod.rs
-│       └── views
-│           ├── about.rs
-│           ├── analytics
-│           │   ├── benchmarking.rs
-│           │   ├── charts.rs
-│           │   ├── controls.rs
-│           │   ├── data.rs
-│           │   ├── mod.rs
-│           │   └── pillars.rs
-│           ├── config.rs
-│           ├── download.rs
-│           ├── export.rs
-│           ├── form_viewer
-│           │   ├── components.rs
-│           │   ├── formatter.rs
-│           │   ├── mod.rs
-│           │   ├── nav_tree.rs
-│           │   ├── profile.rs
-│           │   ├── question_cards.rs
-│           │   ├── report_view.rs
-│           │   ├── section_b_matrix.rs
-│           │   └── visibility.rs
-│           ├── geo.rs
-│           └── mod.rs
+│   ├── system.rs
+│   ├── ui
+│   │   ├── events.rs
+│   │   ├── shell
+│   │   │   ├── ai_drawer.rs
+│   │   │   ├── logs_panel.rs
+│   │   │   └── nav_rail.rs
+│   │   ├── shell.rs
+│   │   ├── state
+│   │   │   ├── ai.rs
+│   │   │   ├── analytics.rs
+│   │   │   ├── export.rs
+│   │   │   ├── form_viewer.rs
+│   │   │   └── geo.rs
+│   │   ├── state.rs
+│   │   ├── views
+│   │   │   ├── about.rs
+│   │   │   ├── analytics
+│   │   │   │   ├── benchmarking.rs
+│   │   │   │   ├── charts.rs
+│   │   │   │   ├── controls.rs
+│   │   │   │   ├── data.rs
+│   │   │   │   └── pillars.rs
+│   │   │   ├── analytics.rs
+│   │   │   ├── config.rs
+│   │   │   ├── download.rs
+│   │   │   ├── export.rs
+│   │   │   ├── form_viewer
+│   │   │   │   ├── components.rs
+│   │   │   │   ├── formatter.rs
+│   │   │   │   ├── nav_tree.rs
+│   │   │   │   ├── profile.rs
+│   │   │   │   ├── question_cards.rs
+│   │   │   │   ├── report_view.rs
+│   │   │   │   ├── section_b_matrix.rs
+│   │   │   │   ├── tables
+│   │   │   │   │   ├── common.rs
+│   │   │   │   │   ├── generic.rs
+│   │   │   │   │   ├── section_a.rs
+│   │   │   │   │   └── section_c.rs
+│   │   │   │   ├── tables.rs
+│   │   │   │   └── visibility.rs
+│   │   │   ├── form_viewer.rs
+│   │   │   └── geo.rs
+│   │   └── views.rs
+│   └── ui.rs
 └── structure.txt
 
-19 directories, 88 files
+21 directories, 111 files
