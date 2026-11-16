@@ -21,26 +21,12 @@
 │   ├── 10_cluster_tuning.sql
 │   ├── 99_data_dictionary.sql
 │   ├── brsr_delete_create.sh
-│   ├── seeds
-│   │   ├── form_layout_deletethispart.csv
-│   │   ├── industry_master.csv
-│   │   ├── pin_code.csv
-│   │   ├── unit_conversions.csv
-│   │   └── xbrl_tag_rules_deletethispart.csv
-│   └── text_sql
-│       ├── 00_teardown_and_extensions.txt
-│       ├── 01_file_list.txt
-│       ├── 02a_xbrl_tag_rules.txt
-│       ├── 02b_form_layout.txt
-│       ├── 03_industry_master.txt
-│       ├── 04_exchange_industry_master.txt
-│       ├── 05_geo_pincode.txt
-│       ├── 06_unit_conversions.txt
-│       ├── 07_entity_list.txt
-│       ├── 08_brsr_facts.txt
-│       ├── 09_analytics_views.txt
-│       ├── 10_cluster_tuning.txt
-│       └── 99_data_dictionary.txt
+│   └── seeds
+│       ├── form_layout_deletethispart.csv
+│       ├── industry_master.csv
+│       ├── pin_code.csv
+│       ├── unit_conversions.csv
+│       └── xbrl_tag_rules_deletethispart.csv
 ├── src
 │   ├── ai
 │   │   ├── agent.rs
@@ -131,4 +117,4 @@
 │   └── ui.rs
 └── structure.txt
 
-21 directories, 111 files
+20 directories, 98 files
