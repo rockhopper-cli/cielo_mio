@@ -1,4 +1,4 @@
--- create table - Description: Analytical Views for Company ESG KPIs and Sector Medians
+-- create views - Description: Analytical Views for Company ESG KPIs and Sector Medians
 CREATE OR REPLACE VIEW view_company_esg_kpis AS
 WITH classified_facts AS (
     SELECT
@@ -6,14 +6,48 @@ WITH classified_facts AS (
         f.standard_indicator_capmkt AS tag,
         f.standard_context_reference AS ctx,
         COALESCE(f.standard_numeric_value, f.numeric_value::numeric) AS val,
-        -- Strict CY > Axis CY > PY/PPY priority (prevents '%main%' matching DPYMain or '%cy%' matching Policy)
+        -- Strict CY (3) > Axis CY (2) > PY/PPY (1) priority
         CASE
-            WHEN f.standard_context_reference ~* '(_p?py([0-9]+)?$|^d?p?py|^i?p?py|previous|prior)' THEN 1
-            WHEN f.standard_context_reference ~* '(^d?cy|^i?cy|_cy$|_cy_|current)' THEN 3
+            WHEN f.standard_context_reference ~* '(^[di]_?p?py([0-9]+|_|main|$)|_p?py([0-9]+|_|$)|previous|prior)' THEN 1
+            WHEN f.standard_context_reference ~* '(^[di]_?cy([0-9]+|_|main|$)|_cy([0-9]+|_|$)|current)' THEN 3
             ELSE 2
         END AS ctx_priority
     FROM brsr_facts f
     WHERE COALESCE(f.standard_numeric_value, f.numeric_value::numeric) IS NOT NULL
+      AND f.standard_indicator_capmkt IN (
+          'TotalScope1Emissions',
+          'TotalScope2Emissions',
+          'TotalScope3Emissions',
+          'TotalVolumeOfWaterWithdrawal',
+          'EnergyIntensityPerRupeeOfTurnover',
+          'WasteIntensityPerRupeeOfTurnover',
+          'TotalEnergyConsumedFromRenewableSources',
+          'TotalEnergyConsumedFromRenewableAndNonRenewableSources',
+          'PercentageOfFemaleBoardOfDirectors',
+          'NumberOfFemaleBoardOfDirectors',
+          'TotalNumberOfBoardOfDirectors',
+          'PercentageOfGrossWagesPaidToFemaleToTotalWagesPaid',
+          'GrossWagesPaidToFemale',
+          'TotalWagesPaid',
+          'TurnoverRate',
+          'PercentageOfEmployeesOrWorkersIncludingDifferentlyAbled',
+          'NumberOfEmployeesOrWorkersIncludingDifferentlyAbled',
+          'ComplaintsOnPOSHUpHeld',
+          'TotalComplaintsReportedUnderSexualHarassmentOfWomenAtWorkplace',
+          'PercentageOfCostIncurredOnWellBeingMeasuresWithRespectToTotalRevenueOfTheCompany',
+          'AmountOfCostIncurredOnWellBeingMeasures',
+          'TotalRevenueOfTheCompany',
+          'TotalRecordableWorkRelatedInjuries',
+          'NumberOfFatalities',
+          'NumberOfDirectorsAgainstWhomDisciplinaryActionWasTaken',
+          'NumberOfKMPsAgainstWhomDisciplinaryActionWasTaken',
+          'NumberOfEmployeesAgainstWhomDisciplinaryActionWasTaken',
+          'NumberOfWorkersAgainstWhomDisciplinaryActionWasTaken',
+          'NumberOfComplaintsFiledFromStakeHolderGroupDuringTheYear',
+          'ConsumerComplaintsReceivedDuringTheYear',
+          'NumberOfComplaintsPendingFromStakeHolderGroupResolutionAtTheEndOfYear',
+          'ConsumerComplaintsPendingResolutionAtEndOfYear'
+      )
 ),
 scalar_facts AS (
     SELECT
@@ -47,6 +81,7 @@ scalar_facts AS (
         val,
         ctx_priority
     FROM classified_facts
+    WHERE ctx_priority >= 2
 ),
 resolved_scalar AS (
     SELECT DISTINCT ON (client_uuid, metric_name)

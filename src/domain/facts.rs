@@ -11,7 +11,8 @@ pub struct RawFact {
     pub decimals: Option<i16>,
     pub raw_value: String,
     pub standard_unit_ref: Option<String>,
-    pub standard_value: Option<f64>,
+    pub numeric_value: Option<Decimal>,
+    pub standard_value: Option<Decimal>,
     pub standard_value_str: Option<String>,
     pub converted_unit: Option<String>,
     pub datatype: &'static str,
@@ -40,12 +41,12 @@ pub struct EnrichedFact {
     pub friendly_grouping: Option<String>,
     pub response_datatype: &'static str,
     pub raw_value: String,
-    pub numeric_value: Option<f64>,
+    pub numeric_value: Option<Decimal>,
     pub unit_reference: Option<String>,
     pub standard_unit_reference: Option<String>,
     pub decimals: Option<i16>,
     pub standard_raw_value: Option<String>,
-    pub standard_numeric_value: Option<f64>,
+    pub standard_numeric_value: Option<Decimal>,
 }
 
 #[derive(Debug, Clone)]

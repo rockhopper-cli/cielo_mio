@@ -1,11 +1,18 @@
 // src/storage/repository/entities.rs
 
 use crate::domain::entity::EntityProfile;
-use crate::domain::taxonomy::{IndustryRecord, IndustryRegistry};
+use crate::domain::taxonomy::IndustryRecord;
 use crate::ui::state::{CompanyFilingSummary, GeoEntityMarker};
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Row, Transaction};
 use uuid::Uuid;
+
+fn clamp_opt(opt: &Option<String>, max_chars: usize) -> Option<String> {
+    opt.as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.chars().take(max_chars).collect())
+}
 
 /// Fetches company filings summary for the Form Viewer selector
 pub async fn fetch_company_filings(
@@ -88,8 +95,7 @@ pub async fn insert_entity_profile(
 ) -> Result<Uuid, sqlx::Error> {
     let paid_up_decimal = profile
         .paid_up_shares_value
-        .filter(|v| v.is_finite() && v.abs() < 1e16)
-        .and_then(|v| Decimal::try_from(v).ok())
+        .filter(|d| d.abs() < Decimal::from(10_000_000_000_000_000_i64))
         .map(|d| d.round_dp(4));
 
     let (fy_start, fy_end) = match (profile.financial_year_start, profile.financial_year_end) {
@@ -104,6 +110,15 @@ pub async fn insert_entity_profile(
         .filter(|s| !s.is_empty())
         .unwrap_or("Standalone");
 
+    let cin_clamped: String = profile
+        .corporate_id_number
+        .trim()
+        .chars()
+        .take(100)
+        .collect();
+    let company_clamped: String = profile.company_name.trim().chars().take(255).collect();
+    let boundary_clamped: String = boundary.chars().take(50).collect();
+
     // Clear any superseded overlapping filing for the same CIN, boundary, and FY window
     if let (Some(s), Some(e)) = (fy_start, fy_end) {
         sqlx::query(
@@ -117,8 +132,8 @@ pub async fn insert_entity_profile(
               AND daterange(financial_year_start, financial_year_end, '[]') && daterange($3, $4, '[]');
             "#,
         )
-        .bind(&profile.corporate_id_number)
-        .bind(boundary)
+        .bind(&cin_clamped)
+        .bind(&boundary_clamped)
         .bind(s)
         .bind(e)
         .execute(&mut **tx)
@@ -150,20 +165,20 @@ pub async fn insert_entity_profile(
     )
     .bind(stock_market)
     .bind(file_id)
-    .bind(&profile.corporate_id_number)
-    .bind(&profile.isin)
-    .bind(&profile.nse_symbol)
-    .bind(&profile.bse_scrip_code)
-    .bind(&profile.company_name)
+    .bind(&cin_clamped)
+    .bind(clamp_opt(&profile.isin, 12))
+    .bind(clamp_opt(&profile.nse_symbol, 50))
+    .bind(clamp_opt(&profile.bse_scrip_code, 20))
+    .bind(&company_clamped)
     .bind(&profile.address_corporate_office)
     .bind(&profile.address_registered_office)
-    .bind(&profile.contact_person_name)
-    .bind(&profile.contact_person_phone)
-    .bind(&profile.contact_person_email)
-    .bind(&profile.company_email)
-    .bind(&profile.company_telephone)
-    .bind(&profile.website)
-    .bind(boundary)
+    .bind(clamp_opt(&profile.contact_person_name, 500))
+    .bind(clamp_opt(&profile.contact_person_phone, 255))
+    .bind(clamp_opt(&profile.contact_person_email, 255))
+    .bind(clamp_opt(&profile.company_email, 255))
+    .bind(clamp_opt(&profile.company_telephone, 255))
+    .bind(clamp_opt(&profile.website, 255))
+    .bind(&boundary_clamped)
     .bind(fy_start)
     .bind(fy_end)
     .bind(profile.incorporation_date)
@@ -174,7 +189,7 @@ pub async fn insert_entity_profile(
     let entity_id: Uuid = row.get("entity_id");
     let db_sector: Option<String> = row.get("industry_sector");
 
-    // Safety fallback if the database still uses the older trigger without NIC lookup
+    // Safety fallback if the database still uses an older trigger without NIC lookup
     if matches!(db_sector.as_deref(), None | Some("Unclassified"))
         && let Some(fb) = fallback_industry
         && fb.sector != "Unclassified"
@@ -198,13 +213,14 @@ pub async fn insert_entity_profile(
     Ok(entity_id)
 }
 
-/// Instant offline re-resolution of unmapped entities using the local geo_pincode table
+/// Instant offline re-resolution of pending/not-found entities using local geo_pincode
 pub async fn resolve_unmapped_pincodes_bulk(pool: &PgPool) -> Result<u64, sqlx::Error> {
     let res = sqlx::query(
         r#"
         UPDATE entity_list
         SET address_registered_office = address_registered_office
         WHERE (latitude IS NULL OR longitude IS NULL)
+          AND geocode_status IN ('PENDING', 'NOT_FOUND')
           AND (address_registered_office IS NOT NULL OR address_corporate_office IS NOT NULL);
         "#,
     )
@@ -214,11 +230,12 @@ pub async fn resolve_unmapped_pincodes_bulk(pool: &PgPool) -> Result<u64, sqlx::
     Ok(res.rows_affected())
 }
 
-/// Reclassifies any existing Unclassified entities in entity_list using
-/// exchange_industry_master, industry_master (5-digit / 2-digit NIC), and statutory keywords.
+/// Reclassifies unclassified or fallback-classified entities using PostgreSQL's 6-tier trigger
 pub async fn reclassify_unclassified_entities(pool: &PgPool) -> Result<u64, sqlx::Error> {
-    // Backfill NSE symbol / BSE scrip from file_list if missing
-    let _ = sqlx::query(
+    let mut updated: u64 = 0;
+
+    // 1. Backfill NSE symbol / BSE scrip from file_list if missing (fires trg_set_industry)
+    if let Ok(res) = sqlx::query(
         r#"
         UPDATE entity_list e
         SET nse_symbol = COALESCE(e.nse_symbol, fl.symbol),
@@ -230,98 +247,17 @@ pub async fn reclassify_unclassified_entities(pool: &PgPool) -> Result<u64, sqlx
         "#,
     )
     .execute(pool)
-    .await;
-
-    let mut updated: u64 = 0;
-
-    if let Ok(res) = sqlx::query(
-        r#"
-        UPDATE entity_list e
-        SET industry_sector = ex.sector,
-            industry_division = ex.industry,
-            industry_source = 'EXCHANGE_BACKFILL'
-        FROM exchange_industry_master ex
-        WHERE (e.industry_source IS NULL OR e.industry_source = 'UNCLASSIFIED' OR e.industry_sector = 'Unclassified')
-          AND (
-              (e.isin IS NOT NULL AND ex.isin = UPPER(TRIM(e.isin)))
-              OR (e.nse_symbol IS NOT NULL AND UPPER(ex.symbol) = UPPER(TRIM(e.nse_symbol)))
-              OR (e.bse_scrip_code IS NOT NULL AND ex.scrip_code = TRIM(e.bse_scrip_code))
-              OR (ex.cin = UPPER(TRIM(e.corporate_id_number)))
-          );
-        "#,
-    )
-    .execute(pool)
     .await
     {
         updated += res.rows_affected();
     }
 
-    if let Ok(res) = sqlx::query(
-        r#"
-        UPDATE entity_list e
-        SET industry_sector = COALESCE(im5.esg_sector, im2.esg_sector),
-            industry_division = COALESCE(im5.division_name, im2.division_name),
-            industry_source = CASE WHEN im5.nic_code IS NOT NULL THEN 'NIC_5DIGIT' ELSE 'NIC_2DIGIT' END
-        FROM (
-            SELECT entity_id,
-                   substring(UPPER(TRIM(corporate_id_number)) FROM '^[LU]([0-9]{5})[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$') AS nic5
-            FROM entity_list
-            WHERE industry_source IS NULL
-               OR industry_source = 'UNCLASSIFIED'
-               OR industry_sector = 'Unclassified'
-        ) src
-        LEFT JOIN industry_master im5 ON im5.nic_code = src.nic5
-        LEFT JOIN industry_master im2 ON im2.division_code = LEFT(src.nic5, 2) AND LENGTH(im2.nic_code) = 2
-        WHERE e.entity_id = src.entity_id
-          AND COALESCE(im5.esg_sector, im2.esg_sector) IS NOT NULL;
-        "#,
-    )
-    .execute(pool)
-    .await
+    // 2. Delegate full 6-tier resolution (Exchange ISIN/Ticker/CIN/Trigram -> NIC -> Statutory) to SQL
+    if let Ok(count) = sqlx::query_scalar::<_, i32>("SELECT sync_entity_industries()")
+        .fetch_one(pool)
+        .await
     {
-        updated += res.rows_affected();
-    }
-
-    let remaining = sqlx::query(
-        r#"
-        SELECT entity_id, corporate_id_number, company_name
-        FROM entity_list
-        WHERE industry_source IS NULL
-           OR industry_source = 'UNCLASSIFIED'
-           OR industry_sector = 'Unclassified';
-        "#,
-    )
-    .fetch_all(pool)
-    .await?;
-
-    if !remaining.is_empty()
-        && let Ok(registry) = IndustryRegistry::load_from_db(pool).await
-    {
-        for r in remaining {
-            let eid: Uuid = r.get("entity_id");
-            let cin: String = r.get("corporate_id_number");
-            let name: String = r.get("company_name");
-            let rec = registry.classify_cin_or_name(&cin, &name);
-            if rec.sector != "Unclassified" {
-                let res = sqlx::query(
-                    r#"
-                    UPDATE entity_list
-                    SET industry_sector = $2,
-                        industry_division = $3,
-                        industry_source = 'STATUTORY_KEYWORD'
-                    WHERE entity_id = $1;
-                    "#,
-                )
-                .bind(eid)
-                .bind(&rec.sector)
-                .bind(&rec.division)
-                .execute(pool)
-                .await;
-                if let Ok(done) = res {
-                    updated += done.rows_affected();
-                }
-            }
-        }
+        updated += count.max(0) as u64;
     }
 
     Ok(updated)

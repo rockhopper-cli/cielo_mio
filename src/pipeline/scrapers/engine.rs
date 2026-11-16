@@ -193,12 +193,22 @@ impl ExchangeDownloader {
                 if cancel_token.is_cancelled() {
                     break;
                 }
-
-                if files::check_file_status(&self.pool, &pending.file_name)
-                    .await
-                    .unwrap_or(FileSyncStatus::NewFile)
-                    == FileSyncStatus::AlreadyMapped
+                if let Some(max) = config.max_files
+                    && downloaded >= max
                 {
+                    break;
+                }
+
+                let target_path = match pending.file_type {
+                    FileType::Pdf => pdf_dir.join(&pending.file_name),
+                    FileType::Xml => xml_dir.join(&pending.file_name),
+                };
+
+                let status = files::check_file_status(&self.pool, &pending.file_name)
+                    .await
+                    .unwrap_or(FileSyncStatus::NewFile);
+
+                if status == FileSyncStatus::AlreadyMapped {
                     skipped += 1;
                     let _ = event_tx
                         .send(DownloadEvent::FileSkipped {
@@ -209,10 +219,24 @@ impl ExchangeDownloader {
                     continue;
                 }
 
-                let target_path = match pending.file_type {
-                    FileType::Pdf => pdf_dir.join(&pending.file_name),
-                    FileType::Xml => xml_dir.join(&pending.file_name),
-                };
+                let already_on_disk = target_path.exists()
+                    && tokio::fs::metadata(&target_path)
+                        .await
+                        .is_ok_and(|m| m.len() > 0);
+
+                if already_on_disk {
+                    if matches!(status, FileSyncStatus::NewFile) {
+                        let _ = files::record_file_success(&self.pool, &pending).await;
+                    }
+                    skipped += 1;
+                    let _ = event_tx
+                        .send(DownloadEvent::FileSkipped {
+                            file_name: pending.file_name.clone(),
+                            reason: format!("Already on disk ({})", exchange_name),
+                        })
+                        .await;
+                    continue;
+                }
 
                 match download_file_atomic(
                     &client,
@@ -243,23 +267,13 @@ impl ExchangeDownloader {
                             .await;
                     }
                 }
-
-                if let Some(max) = config.max_files
-                    && downloaded >= max {
-                        let _ = event_tx
-                            .send(DownloadEvent::Log(format!(
-                                "[{}] Reached target limit of {} files.",
-                                exchange_name, max
-                            )))
-                            .await;
-                        break;
-                    }
             }
 
             if let Some(max) = config.max_files
-                && downloaded >= max {
-                    break;
-                }
+                && downloaded >= max
+            {
+                break;
+            }
 
             tokio::time::sleep(Duration::from_millis(300)).await;
         }

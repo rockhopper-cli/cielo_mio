@@ -180,6 +180,14 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 }
 
 fn start_download_task(state: &mut AppState) {
+    if !state.download_xml && !state.download_pdf {
+        state.add_log(
+            "[WARN] Select at least one file type (XML Reports or PDF Filings) before downloading."
+                .to_string(),
+        );
+        return;
+    }
+
     let pool = match state.pool.clone() {
         Some(p) => p,
         None => {
@@ -417,13 +425,27 @@ pub async fn execute_ingestion(
                 }
             };
 
-            match parser.parse_file(&disk_path) {
-                Ok(filing) => {
-                    let (enriched, profile) = dictionary.enrich_facts(
-                        &filing,
-                        file_symbol.as_deref(),
-                        file_scrip.as_deref(),
-                    );
+            let parsed_and_enriched = tokio::task::block_in_place(|| {
+                parser.parse_file(&disk_path).map(|filing| {
+                    dictionary.enrich_facts(&filing, file_symbol.as_deref(), file_scrip.as_deref())
+                })
+            });
+
+            match parsed_and_enriched {
+                Ok((enriched, profile)) => {
+                    if profile.corporate_id_number.trim().is_empty() || enriched.is_empty() {
+                        let err_msg = "Blank File: No valid entity identifier or BRSR facts found"
+                            .to_string();
+                        ingestion.record_failure(file_id, &err_msg).await;
+                        let _ = event_tx
+                            .send(DownloadEvent::Log(format!(
+                                "[WARN] Skipped empty/invalid XML {}: {}",
+                                file_name, err_msg
+                            )))
+                            .await;
+                        continue;
+                    }
+
                     let fact_count = enriched.len();
                     let cin = profile.corporate_id_number.clone();
                     let comp_name = profile.company_name.clone();

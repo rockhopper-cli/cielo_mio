@@ -8,7 +8,7 @@ use crate::ui::state::{
 use eframe::egui::{self, Color32, ComboBox, Margin, RichText, ScrollArea, Stroke, TextEdit, Ui};
 use egui_extras::{Column, TableBuilder};
 
-pub fn calculate_sector_median<F>(state: &AppState, sector: &str, _extractor: &F) -> f64
+pub fn calculate_sector_median<F>(state: &AppState, sector: &str, _extractor: &F) -> Option<f64>
 where
     F: Fn(&CompanyEsgMetrics) -> Option<f64>,
 {
@@ -17,7 +17,6 @@ where
         .read()
         .ok()
         .and_then(|lock| lock.get(sector).and_then(|m| m.get(col_name)).copied())
-        .unwrap_or(0.0)
 }
 
 fn get_active_median_column_name(state: &AppState) -> &'static str {
@@ -136,14 +135,14 @@ pub fn render_benchmarking_table(ui: &mut Ui, state: &mut AppState) {
                         .resizable(true)
                         .min_scrolled_height(240.0)
                         .max_scroll_height(280.0)
-                        .column(Column::exact(190.0)) // Company
-                        .column(Column::exact(155.0)) // Sector
-                        .column(Column::exact(115.0)); // FY
+                        .column(Column::exact(190.0))
+                        .column(Column::exact(155.0))
+                        .column(Column::exact(115.0));
 
                     for _ in 0..metric_col_count {
                         builder = builder.column(Column::exact(95.0));
                     }
-                    builder = builder.column(Column::exact(90.0)); // Action
+                    builder = builder.column(Column::exact(90.0));
 
                     builder
                         .header(26.0, |mut header| {
@@ -286,8 +285,14 @@ pub fn render_benchmarking_table(ui: &mut Ui, state: &mut AppState) {
 }
 
 fn fmt_opt(val: Option<f64>) -> String {
-    val.map(|v| format!("{:.2}", v))
-        .unwrap_or_else(|| "—".to_string())
+    val.map(|v| {
+        if v != 0.0 && v.abs() < 0.1 {
+            format!("{:.4}", v)
+        } else {
+            format!("{:.2}", v)
+        }
+    })
+    .unwrap_or_else(|| "—".to_string())
 }
 
 fn fmt_opt_pct(val: Option<f64>) -> String {

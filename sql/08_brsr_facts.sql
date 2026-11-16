@@ -45,9 +45,9 @@ COMMENT ON COLUMN brsr_facts.client_id IS 'Corporate Identity Number (CIN) ident
 COMMENT ON COLUMN brsr_facts.file_uuid IS 'Foreign key referencing file_list(file_id) to link fact to source file and upload timestamp';
 COMMENT ON COLUMN brsr_facts.client_uuid IS 'Foreign key referencing entity_list(entity_id) linking fact to company profile record';
 COMMENT ON COLUMN brsr_facts.indicator_capmkt IS 'Raw SEBI XBRL tag as parsed from the XML document';
-COMMENT ON COLUMN brsr_facts.standard_indicator_capmkt IS 'Standardized taxonomy concept tag name mapped via form_master';
+COMMENT ON COLUMN brsr_facts.standard_indicator_capmkt IS 'Standardized taxonomy concept tag name mapped via xbrl_tag_rules';
 COMMENT ON COLUMN brsr_facts.context_reference IS 'Raw context reference string from the XML fact element';
-COMMENT ON COLUMN brsr_facts.standard_context_reference IS 'Standardized context reference string mapped via form_master';
+COMMENT ON COLUMN brsr_facts.standard_context_reference IS 'Standardized context reference string mapped via xbrl_tag_rules';
 COMMENT ON COLUMN brsr_facts.friendly_grouping IS 'Sub-table or analytical grouping (e.g., details_other_listed_entity, energy_consumption)';
 COMMENT ON COLUMN brsr_facts.response_datatype IS 'Inferred data type: number or string';
 COMMENT ON COLUMN brsr_facts.raw_value IS 'Original verbatim text content as submitted in the XML element';

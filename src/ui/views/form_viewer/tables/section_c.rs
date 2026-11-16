@@ -9,12 +9,12 @@ use std::collections::{BTreeSet, HashMap};
 
 type ComplaintCatRow<'a> = (
     String,
-    &'a FormMasterItem,
-    &'a FormMasterItem,
-    &'a FormMasterItem,
-    &'a FormMasterItem,
-    &'a FormMasterItem,
-    &'a FormMasterItem,
+    Option<&'a FormMasterItem>,
+    Option<&'a FormMasterItem>,
+    Option<&'a FormMasterItem>,
+    Option<&'a FormMasterItem>,
+    Option<&'a FormMasterItem>,
+    Option<&'a FormMasterItem>,
 );
 
 pub fn try_render(
@@ -583,42 +583,56 @@ fn flush_complaints_cat<'a>(
     buf: &[&'a FormMasterItem],
     out: &mut Vec<ComplaintCatRow<'a>>,
 ) {
-    if buf.len() >= 6 && !cat.is_empty() {
-        let mut cy_filed = None;
-        let mut py_filed = None;
-        let mut cy_pend = None;
-        let mut py_pend = None;
-        let mut cy_rem = None;
-        let mut py_rem = None;
-        for &it in buf {
-            let is_py = it.append_to_field.as_deref() == Some("_PY")
-                || it.standard_context_reference.ends_with("_PY");
-            let tag = it.standard_indicator_capmkt.as_str();
-            if tag.contains("Filed") || tag.contains("Received") {
-                if is_py {
-                    py_filed = Some(it);
-                } else {
-                    cy_filed = Some(it);
-                }
-            } else if tag.contains("Pending") {
-                if is_py {
-                    py_pend = Some(it);
-                } else {
-                    cy_pend = Some(it);
-                }
-            } else if tag.contains("Remark") {
-                if is_py {
-                    py_rem = Some(it);
-                } else {
-                    cy_rem = Some(it);
-                }
+    if buf.is_empty() || cat.is_empty() {
+        return;
+    }
+
+    let mut cy_filed = None;
+    let mut py_filed = None;
+    let mut cy_pend = None;
+    let mut py_pend = None;
+    let mut cy_rem = None;
+    let mut py_rem = None;
+
+    for &it in buf {
+        let ctx = it.standard_context_reference.as_str();
+        let is_py = it.append_to_field.as_deref() == Some("_PY")
+            || ctx.ends_with("_PY")
+            || ctx.contains("_PY_")
+            || ctx.eq_ignore_ascii_case("DPYMain");
+        let tag = it.standard_indicator_capmkt.as_str();
+
+        if tag.contains("Filed") || tag.contains("Received") {
+            if is_py {
+                py_filed = Some(it);
+            } else {
+                cy_filed = Some(it);
+            }
+        } else if tag.contains("Pending") {
+            if is_py {
+                py_pend = Some(it);
+            } else {
+                cy_pend = Some(it);
+            }
+        } else if tag.contains("Remark") {
+            if is_py {
+                py_rem = Some(it);
+            } else {
+                cy_rem = Some(it);
             }
         }
-        if let (Some(cf), Some(cp), Some(cr), Some(pf), Some(pp), Some(pr)) =
-            (cy_filed, cy_pend, cy_rem, py_filed, py_pend, py_rem)
-        {
-            out.push((cat.to_string(), cf, cp, cr, pf, pp, pr));
-        }
+    }
+
+    if cy_filed.is_some() || py_filed.is_some() || cy_pend.is_some() || py_pend.is_some() {
+        out.push((
+            cat.to_string(),
+            cy_filed,
+            cy_pend,
+            cy_rem,
+            py_filed,
+            py_pend,
+            py_rem,
+        ));
     }
 }
 
@@ -655,59 +669,29 @@ fn render_cy_py_complaints_matrix(
     }
     flush_complaints_cat(&current_cat, &cat_items, &mut categories);
 
+    let lookup = |m_opt: Option<&FormMasterItem>, dt: &str| -> Option<CellData> {
+        let m = m_opt?;
+        fact_cell(
+            find_fact(
+                exact_facts,
+                m.standard_indicator_capmkt.trim(),
+                m.standard_context_reference.trim(),
+            ),
+            dt,
+        )
+    };
+
     let rows: Vec<Vec<Option<CellData>>> = categories
         .into_iter()
         .map(|(cat, cf, cp, cr, pf, pp, pr)| {
             vec![
                 text_cell(&cat),
-                fact_cell(
-                    find_fact(
-                        exact_facts,
-                        cf.standard_indicator_capmkt.trim(),
-                        cf.standard_context_reference.trim(),
-                    ),
-                    "number",
-                ),
-                fact_cell(
-                    find_fact(
-                        exact_facts,
-                        cp.standard_indicator_capmkt.trim(),
-                        cp.standard_context_reference.trim(),
-                    ),
-                    "number",
-                ),
-                fact_cell(
-                    find_fact(
-                        exact_facts,
-                        cr.standard_indicator_capmkt.trim(),
-                        cr.standard_context_reference.trim(),
-                    ),
-                    "string",
-                ),
-                fact_cell(
-                    find_fact(
-                        exact_facts,
-                        pf.standard_indicator_capmkt.trim(),
-                        pf.standard_context_reference.trim(),
-                    ),
-                    "number",
-                ),
-                fact_cell(
-                    find_fact(
-                        exact_facts,
-                        pp.standard_indicator_capmkt.trim(),
-                        pp.standard_context_reference.trim(),
-                    ),
-                    "number",
-                ),
-                fact_cell(
-                    find_fact(
-                        exact_facts,
-                        pr.standard_indicator_capmkt.trim(),
-                        pr.standard_context_reference.trim(),
-                    ),
-                    "string",
-                ),
+                lookup(cf, "number"),
+                lookup(cp, "number"),
+                lookup(cr, "string"),
+                lookup(pf, "number"),
+                lookup(pp, "number"),
+                lookup(pr, "string"),
             ]
         })
         .collect();

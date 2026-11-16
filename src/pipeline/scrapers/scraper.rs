@@ -10,6 +10,7 @@ use reqwest::header::{
     ACCEPT, ACCEPT_LANGUAGE, CONNECTION, HeaderMap, HeaderValue, REFERER, USER_AGENT,
 };
 use serde_json::Value;
+use std::collections::HashSet;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
 
@@ -18,16 +19,53 @@ const NSE_BASE_URL: &str = "https://www.nseindia.com";
 const NSE_LIST_URL: &str = "https://www.nseindia.com/companies-listing/corporate-filings-bussiness-sustainabilitiy-reports";
 const NSE_API_URL: &str = "https://www.nseindia.com/api/corporate-bussiness-sustainabilitiy";
 
-fn truncate_filename(stem: &str, ext: &str, max_total_len: usize) -> String {
+/// Truncates `prefix` before `unique_suffix` so unique filing IDs are never clipped off long company names.
+fn build_safe_filename(
+    prefix: &str,
+    unique_suffix: &str,
+    ext: &str,
+    max_total_len: usize,
+) -> String {
     let max_stem = max_total_len.saturating_sub(ext.len() + 1);
-    let mut clipped: String = stem.chars().take(max_stem).collect();
-    while clipped.ends_with('_') {
-        clipped.pop();
+    let clean_suffix = unique_suffix.trim_matches('_');
+    let clean_prefix = prefix.trim_matches('_');
+
+    let mut stem = if clean_suffix.is_empty() {
+        clean_prefix.chars().take(max_stem).collect::<String>()
+    } else if clean_prefix.is_empty() {
+        let len = clean_suffix.chars().count();
+        clean_suffix
+            .chars()
+            .skip(len.saturating_sub(max_stem))
+            .collect()
+    } else {
+        let suffix_len = clean_suffix.chars().count();
+        if suffix_len + 1 >= max_stem {
+            clean_suffix
+                .chars()
+                .skip(suffix_len.saturating_sub(max_stem))
+                .collect()
+        } else {
+            let prefix_budget = max_stem - suffix_len - 1;
+            let clipped_prefix: String = clean_prefix
+                .chars()
+                .take(prefix_budget)
+                .collect::<String>()
+                .trim_end_matches('_')
+                .to_string();
+            if clipped_prefix.is_empty() {
+                clean_suffix.to_string()
+            } else {
+                format!("{}_{}", clipped_prefix, clean_suffix)
+            }
+        }
+    };
+
+    stem = stem.trim_matches('_').to_string();
+    if stem.is_empty() {
+        stem = "filing".to_string();
     }
-    if clipped.is_empty() {
-        clipped = "filing".to_string();
-    }
-    format!("{}.{}", clipped, ext)
+    format!("{}.{}", stem, ext)
 }
 
 pub fn build_bse_client() -> Result<Client, String> {
@@ -159,14 +197,18 @@ pub async fn fetch_bse_records(
                             .strip_suffix(".pdf")
                             .or_else(|| leaf.strip_suffix(".PDF"))
                             .unwrap_or(leaf);
-                        let raw_stem = format!(
-                            "{}_{}_BRSR_{}",
+                        let prefix = format!(
+                            "{}_{}_BRSR",
                             sanitize_filename(company),
-                            sanitize_filename(&scrip_code),
-                            sanitize_filename(stem_leaf)
+                            sanitize_filename(&scrip_code)
                         );
                         files.push(PendingFile {
-                            file_name: truncate_filename(&raw_stem, "pdf", 220),
+                            file_name: build_safe_filename(
+                                &prefix,
+                                &sanitize_filename(stem_leaf),
+                                "pdf",
+                                220,
+                            ),
                             download_url: url,
                             stock_market: Market::Bse,
                             file_type: FileType::Pdf,
@@ -183,15 +225,14 @@ pub async fn fetch_bse_records(
                         } else {
                             format!("https://www.bseindia.com/{}", s.trim_start_matches('/'))
                         };
-                        let raw_stem = format!(
-                            "{}_{}_BRSR_XML_{}_{}",
+                        let prefix = format!(
+                            "{}_{}_BRSR_XML_{}",
                             sanitize_filename(company),
                             sanitize_filename(&scrip_code),
-                            sanitize_filename(key),
-                            unique_suffix
+                            sanitize_filename(key)
                         );
                         files.push(PendingFile {
-                            file_name: truncate_filename(&raw_stem, "xml", 220),
+                            file_name: build_safe_filename(&prefix, &unique_suffix, "xml", 220),
                             download_url: url,
                             stock_market: Market::Bse,
                             file_type: FileType::Xml,
@@ -205,20 +246,18 @@ pub async fn fetch_bse_records(
             }
         }
 
-        // Fixed: check per-record `rec_has_xml`, NOT window-wide `files`
         if config.download_xml
             && !rec_has_xml
             && let Some(nid) = news_id
             && !scrip_code.trim().is_empty()
         {
-            let raw_stem = format!(
-                "{}_{}_BRSR_XML_{}",
+            let prefix = format!(
+                "{}_{}_BRSR_XML",
                 sanitize_filename(company),
-                sanitize_filename(&scrip_code),
-                sanitize_filename(nid)
+                sanitize_filename(&scrip_code)
             );
             files.push(PendingFile {
-                file_name: truncate_filename(&raw_stem, "xml", 220),
+                file_name: build_safe_filename(&prefix, &sanitize_filename(nid), "xml", 220),
                 download_url: format!(
                     "https://www.bseindia.com/Msource/90D/CorpXbrlGen.aspx?Bsenewid={}&Scripcode={}",
                     urlencoding::encode(nid),
@@ -234,7 +273,8 @@ pub async fn fetch_bse_records(
         }
     }
 
-    files.dedup_by(|a, b| a.download_url == b.download_url);
+    let mut seen_urls = HashSet::with_capacity(files.len());
+    files.retain(|f| seen_urls.insert(f.download_url.clone()));
     Ok(files)
 }
 
@@ -407,12 +447,7 @@ pub async fn fetch_nse_records(
                                 .trim_end_matches(".xbrl")
                                 .trim_end_matches(".XBRL"),
                         );
-                        let raw_stem = if !prefix.is_empty() {
-                            format!("{}_{}", prefix, clean_leaf)
-                        } else {
-                            clean_leaf
-                        };
-                        let file_name = truncate_filename(&raw_stem, ext, 220);
+                        let file_name = build_safe_filename(&prefix, &clean_leaf, ext, 220);
 
                         let (upload_date, upload_time) = if !submission_date.trim().is_empty() {
                             parse_date_time_from_filename(submission_date)
@@ -436,6 +471,7 @@ pub async fn fetch_nse_records(
         }
     }
 
-    files.dedup_by(|a, b| a.download_url == b.download_url);
+    let mut seen_urls = HashSet::with_capacity(files.len());
+    files.retain(|f| seen_urls.insert(f.download_url.clone()));
     Ok(files)
 }

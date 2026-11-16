@@ -1,7 +1,7 @@
 // src/pipeline/xbrl/parser.rs
 
 use crate::domain::facts::{ParsedFiling, RawFact};
-use crate::domain::units::{UnitRegistry, parse_number, parse_xbrl_numeric};
+use crate::domain::units::{UnitRegistry, ZEROISH, parse_xbrl_decimal};
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use std::collections::{HashMap, HashSet};
@@ -27,14 +27,18 @@ fn decode_xml_bytes(bytes: &[u8]) -> String {
     }
     if bytes.starts_with(&[0xFF, 0xFE]) {
         let u16s: Vec<u16> = bytes[2..]
-            .as_chunks::<2>().0.iter()
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
             .collect();
         return String::from_utf16_lossy(&u16s);
     }
     if bytes.starts_with(&[0xFE, 0xFF]) {
         let u16s: Vec<u16> = bytes[2..]
-            .as_chunks::<2>().0.iter()
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| u16::from_be_bytes([c[0], c[1]]))
             .collect();
         return String::from_utf16_lossy(&u16s);
@@ -411,11 +415,12 @@ impl<'a> XbrlParser<'a> {
                             let val = current_fact_buf.trim().to_string();
                             if !val.is_empty() {
                                 if current_fact_tag == "CorporateIdentityNumber"
+                                    && !ZEROISH.contains(val.to_ascii_lowercase().as_str())
                                     && (primary_cin.is_empty()
                                         || current_context_ref.to_lowercase().contains("main")
                                         || current_context_ref.to_lowercase().contains("dcy"))
                                 {
-                                    primary_cin = val.trim().to_uppercase();
+                                    primary_cin = val.to_uppercase();
                                 }
 
                                 intermediate_facts.push((
@@ -458,26 +463,26 @@ impl<'a> XbrlParser<'a> {
                 .and_then(|u| units_map.get(u).cloned().or_else(|| Some(u.clone())));
 
             let has_numeric_attrs = u_ref.is_some() || dec.is_some();
-            let numeric_parsed = parse_xbrl_numeric(&raw_val, has_numeric_attrs);
+            let numeric_parsed = parse_xbrl_decimal(&raw_val, has_numeric_attrs);
             let datatype = if numeric_parsed.is_some() {
                 "number"
             } else {
                 "string"
             };
 
-            let (std_val_str, converted_unit_str) = if let Some(ref unit_label) = std_unit_display {
-                self.registry.convert_value(unit_label, &raw_val)
-            } else if let Some(num) = numeric_parsed {
-                (num.to_string(), String::new())
+            let (standard_val, std_val_str, converted_unit_str) = if let Some(num) = numeric_parsed
+            {
+                if let Some(ref unit_label) = std_unit_display {
+                    let normalized_input = num.normalize().to_string();
+                    self.registry.convert_decimal(unit_label, &normalized_input)
+                } else {
+                    let norm = num.normalize();
+                    (Some(norm), norm.to_string(), String::new())
+                }
             } else {
-                (raw_val.clone(), String::new())
+                (None, raw_val.clone(), String::new())
             };
 
-            let standard_val = if datatype == "number" {
-                parse_number(&std_val_str).or(numeric_parsed)
-            } else {
-                None
-            };
             let converted_unit = if converted_unit_str.is_empty() {
                 None
             } else {
@@ -492,6 +497,7 @@ impl<'a> XbrlParser<'a> {
                 decimals: dec,
                 raw_value: raw_val,
                 standard_unit_ref: std_unit_display,
+                numeric_value: numeric_parsed,
                 standard_value: standard_val,
                 standard_value_str: if datatype == "number" {
                     Some(std_val_str)

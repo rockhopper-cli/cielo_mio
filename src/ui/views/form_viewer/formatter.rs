@@ -1,4 +1,4 @@
-// src/app/tab_form_viewer/formatter.rs
+// src/ui/views/form_viewer/formatter.rs
 
 use eframe::egui::{self, Color32, RichText, Ui};
 
@@ -42,16 +42,27 @@ pub fn render_value_cell(
         }
     }
 
-    // 2. Email formatting (mailto link with mail icon)
+    // 2. Email formatting (supports multiple comma/semicolon-separated addresses)
     if dt == "email" || (raw_trimmed.contains('@') && !raw_trimmed.contains(' ')) {
-        ui.hyperlink_to(
-            RichText::new(format!("✉ {}", raw_trimmed))
-                .color(Color32::from_rgb(110, 190, 255))
-                .underline(),
-            format!("mailto:{}", raw_trimmed),
-        )
-        .on_hover_text(format!("Click to email {}", raw_trimmed));
-        return;
+        let emails: Vec<&str> = raw_trimmed
+            .split([',', ';'])
+            .map(str::trim)
+            .filter(|e| e.contains('@') && !e.contains(' '))
+            .collect();
+        if !emails.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                for email in emails {
+                    ui.hyperlink_to(
+                        RichText::new(format!("✉ {}", email))
+                            .color(Color32::from_rgb(110, 190, 255))
+                            .underline(),
+                        format!("mailto:{}", email),
+                    )
+                    .on_hover_text(format!("Click to email {}", email));
+                }
+            });
+            return;
+        }
     }
 
     // 3. Phone formatting (telephone icon & clean spacing)
@@ -104,17 +115,23 @@ pub fn render_value_cell(
         return;
     }
 
-    // 6. Hyperlink formatting
+    // 6. Hyperlink formatting (prepends https:// for scheme-less www. links)
     if dt == "hyperlink"
         || raw_trimmed.starts_with("http://")
         || raw_trimmed.starts_with("https://")
+        || raw_trimmed.starts_with("www.")
     {
-        let display_url = if raw_trimmed.len() > 36 {
+        let href = if raw_trimmed.contains("://") {
+            raw_trimmed.to_string()
+        } else {
+            format!("https://{}", raw_trimmed)
+        };
+        let display_url = if raw_trimmed.chars().count() > 36 {
             let boundary = raw_trimmed
                 .char_indices()
                 .nth(33)
                 .map(|(i, _)| i)
-                .unwrap_or(33);
+                .unwrap_or(raw_trimmed.len());
             format!("{}... ↗", &raw_trimmed[..boundary])
         } else {
             format!("{} ↗", raw_trimmed)
@@ -123,7 +140,7 @@ pub fn render_value_cell(
             RichText::new(display_url)
                 .color(Color32::from_rgb(110, 185, 250))
                 .underline(),
-            raw_trimmed,
+            href,
         )
         .on_hover_text(raw_trimmed);
         return;
@@ -209,11 +226,13 @@ pub fn format_phone(raw: &str) -> String {
 #[inline]
 pub fn humanize_context(raw: &str) -> &str {
     let s = raw.trim();
-    if s.contains("CY") || s.contains("CurrentYear") {
+    if s.contains("PPY") || s.contains("PriorToPrevious") {
+        "Prior to Previous Year"
+    } else if s.contains("CY") || s.contains("CurrentYear") {
         "Current Year"
     } else if s.contains("PY") || s.contains("PreviousYear") {
         "Previous Year"
-    } else if s == "MainContext" || s == "Main" {
+    } else if s == "MainContext" || s == "Main" || s == "DCYMain" || s == "ICYMain" {
         "Entity Context"
     } else {
         ""

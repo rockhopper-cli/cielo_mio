@@ -1,5 +1,6 @@
 // src/domain/units.rs
 
+use core::str::FromStr;
 use regex::Regex;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
@@ -30,10 +31,7 @@ pub static ZEROISH: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     s
 });
 
-/// Parses real numeric text strings, cleaning currency prefixes (₹, Rs), commas, percentage signs,
-/// and accounting parentheses (e.g., "(1,000)" -> -1000.0).
-/// Does NOT coerce "NA" / "Not Applicable" / "-" to 0.0 so non-disclosures never pollute medians.
-pub fn parse_number(s: &str) -> Option<f64> {
+fn clean_numeric_str(s: &str) -> Option<(bool, String)> {
     let t = s.trim();
     if t.is_empty() {
         return None;
@@ -54,33 +52,56 @@ pub fn parse_number(s: &str) -> Option<f64> {
         cleaned = rest.trim();
     }
 
-    let normalized = cleaned
-        .replace([',', ' ', '%', '₹', '$'], "")
-        .replace("Rs.", "")
-        .replace("Rs", "");
+    let mut normalized = cleaned.replace([',', ' ', '\u{00A0}', '\t', '%', '₹', '$'], "");
+    for prefix in ["Rs.", "rs.", "RS.", "Rs", "rs", "RS", "INR", "inr"] {
+        if let Some(rest) = normalized.strip_prefix(prefix) {
+            normalized = rest.to_string();
+            break;
+        }
+    }
 
     if normalized.is_empty() {
         return None;
     }
 
+    Some((is_neg, normalized))
+}
+
+/// Exact base-10 numeric parser avoiding binary f64 rounding artifacts
+pub fn parse_decimal(s: &str) -> Option<Decimal> {
+    let (is_neg, normalized) = clean_numeric_str(s)?;
+    let parsed = Decimal::from_str(&normalized)
+        .or_else(|_| Decimal::from_scientific(&normalized))
+        .ok()?;
+    Some(if is_neg { -parsed } else { parsed })
+}
+
+/// Parses real numeric text strings into f64 (used by visibility numeric thresholds)
+pub fn parse_number(s: &str) -> Option<f64> {
+    if let Some(d) = parse_decimal(s)
+        && let Some(f) = d.to_f64()
+        && f.is_finite()
+    {
+        return Some(f);
+    }
+    let (is_neg, normalized) = clean_numeric_str(s)?;
     if let Ok(val) = normalized.parse::<f64>()
         && val.is_finite()
     {
         return Some(if is_neg { -val } else { val });
     }
-
     None
 }
 
-/// Parses numeric XBRL element text where explicit "nil"/"nill" represents 0.0
-pub fn parse_xbrl_numeric(s: &str, has_numeric_attrs: bool) -> Option<f64> {
-    if let Some(n) = parse_number(s) {
-        return Some(n);
+/// Parses numeric XBRL element text into exact Decimal where explicit "nil"/"nill" represents 0
+pub fn parse_xbrl_decimal(s: &str, has_numeric_attrs: bool) -> Option<Decimal> {
+    if let Some(d) = parse_decimal(s) {
+        return Some(d);
     }
     if has_numeric_attrs {
         let lo = s.trim().to_ascii_lowercase();
         if lo == "nil" || lo == "nill" {
-            return Some(0.0);
+            return Some(Decimal::ZERO);
         }
     }
     None
@@ -114,7 +135,10 @@ pub fn normalize_unit_label(s: &str) -> String {
         } else {
             format!("{}/{}", n, d)
         }
-    } else if let Some((num, den)) = s.split_once("Per") {
+    } else if let Some((num, den)) = s.split_once("Per")
+        && !num.trim().is_empty()
+    {
+        // Only treat "Per" as ratio separator when preceded by a numerator (guards "Person"/"Percentage")
         let n = normalize_unit_segment(num);
         let d = normalize_unit_segment(den);
         if d.is_empty() {
@@ -158,17 +182,21 @@ impl UnitRegistry {
     }
 
     /// Standardizes units and computes exact base-10 converted values using Decimal
-    /// Returns: (standard_value_string, converted_unit_label)
-    pub fn convert_value(&self, std_display_unit: &str, raw_val: &str) -> (String, String) {
-        let v_f64 = match parse_number(raw_val) {
-            Some(num) => num,
-            None => return (raw_val.to_string(), String::new()),
+    /// Returns: (converted_decimal_opt, standard_value_string, converted_unit_label)
+    pub fn convert_decimal(
+        &self,
+        std_display_unit: &str,
+        raw_val: &str,
+    ) -> (Option<Decimal>, String, String) {
+        let v_dec = match parse_decimal(raw_val) {
+            Some(d) => d,
+            None => return (None, raw_val.to_string(), String::new()),
         };
-        let v_dec = Decimal::try_from(v_f64).ok();
 
         let unit_key = normalize_unit_label(std_display_unit);
         if unit_key.is_empty() || unit_key == "PURE" {
-            return (v_f64.to_string(), String::new());
+            let norm = v_dec.normalize();
+            return (Some(norm), norm.to_string(), String::new());
         }
 
         // Dynamic pollutant matching (e.g., KGNOXE -> tNOxe)
@@ -185,40 +213,35 @@ impl UnitRegistry {
                 pol.push('e');
             }
             let converted = v_dec
-                .map(|d| (d * Decimal::new(1, 3)).normalize().to_string())
-                .unwrap_or_else(|| (v_f64 * 0.001).to_string());
-            return (converted, format!("t{}", pol));
+                .checked_mul(Decimal::new(1, 3))
+                .unwrap_or(v_dec)
+                .normalize();
+            return (Some(converted), converted.to_string(), format!("t{}", pol));
         }
 
         if unit_key == "NM3" {
-            return (v_f64.to_string(), std_display_unit.to_string());
+            let norm = v_dec.normalize();
+            return (Some(norm), norm.to_string(), std_display_unit.to_string());
         }
 
         if let Some((to_unit, factor)) = self.lookup_unit(&unit_key) {
-            let converted = v_dec
-                .and_then(|d| d.checked_mul(*factor))
-                .map(|d| d.normalize().to_string())
-                .unwrap_or_else(|| {
-                    let f = factor.to_f64().unwrap_or(1.0);
-                    (v_f64 * f).to_string()
-                });
-            return (converted, to_unit.clone());
+            let converted = v_dec.checked_mul(*factor).unwrap_or(v_dec).normalize();
+            return (Some(converted), converted.to_string(), to_unit.clone());
         }
 
-        // Explicit ratio conversion (only splits on '/' preserved by normalize_unit_label)
+        // Explicit ratio conversion
         if let Some((num, den)) = unit_key.split_once('/')
             && let Some((to_unit, factor)) = self.lookup_unit(num)
         {
-            let converted = v_dec
-                .and_then(|d| d.checked_mul(*factor))
-                .map(|d| d.normalize().to_string())
-                .unwrap_or_else(|| {
-                    let f = factor.to_f64().unwrap_or(1.0);
-                    (v_f64 * f).to_string()
-                });
-            return (converted, format!("{}/{}", to_unit, den));
+            let converted = v_dec.checked_mul(*factor).unwrap_or(v_dec).normalize();
+            return (
+                Some(converted),
+                converted.to_string(),
+                format!("{}/{}", to_unit, den),
+            );
         }
 
-        (v_f64.to_string(), String::new())
+        let norm = v_dec.normalize();
+        (Some(norm), norm.to_string(), String::new())
     }
 }

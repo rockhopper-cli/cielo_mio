@@ -17,7 +17,7 @@ pub struct EntityProfile {
     pub financial_year_start: Option<NaiveDate>,
     pub financial_year_end: Option<NaiveDate>,
     pub incorporation_date: Option<NaiveDate>,
-    pub paid_up_shares_value: Option<f64>,
+    pub paid_up_shares_value: Option<Decimal>,
     pub contact_person_name: Option<String>,
     pub contact_person_phone: Option<String>,
     pub contact_person_email: Option<String>,

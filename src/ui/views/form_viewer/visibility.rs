@@ -9,6 +9,40 @@ pub type QuestionGroupKey<'a> = (&'a str, i16, i16, i16);
 pub type QuestionGateRule<'a> = (&'a str, Option<&'a str>);
 pub type QuestionGatesMap<'a> = HashMap<QuestionGroupKey<'a>, QuestionGateRule<'a>>;
 
+/// Matches facts by `(std_tag, std_ctx)` first, only falling back to tag-level matching when
+/// the template context is empty or generic CYMain (`DCYMain`/`ICYMain`)—never leaking CY into PY/dimensional cells.
+pub(super) fn lookup_item_facts<'a>(
+    item: &FormMasterItem,
+    exact_facts: &HashMap<(&str, &str), Vec<&'a FormFactRow>>,
+    tag_facts: &HashMap<&str, Vec<&'a FormFactRow>>,
+) -> Vec<&'a FormFactRow> {
+    let std_ind = item.standard_indicator_capmkt.trim();
+    let std_ctx = item.standard_context_reference.trim();
+
+    if let Some(v) = exact_facts.get(&(std_ind, std_ctx)) {
+        return v.clone();
+    }
+
+    if !std_ind.is_empty()
+        && (std_ctx.is_empty() || std_ctx == "DCYMain" || std_ctx == "ICYMain")
+        && let Some(list) = tag_facts.get(std_ind)
+    {
+        if std_ctx.is_empty() {
+            return list.clone();
+        }
+        return list
+            .iter()
+            .copied()
+            .filter(|f| {
+                let c = f.context_ref.to_ascii_lowercase();
+                !c.contains("py") && !c.contains("previous") && !c.contains("prior")
+            })
+            .collect();
+    }
+
+    Vec::new()
+}
+
 /// Pre-indexes all reported responses by question_key across the active filing
 pub fn build_response_index<'a>(
     form_template: &'a [FormMasterItem],
@@ -19,20 +53,8 @@ pub fn build_response_index<'a>(
     let mut responses = HashMap::with_capacity(form_template.len());
 
     for item in form_template {
-        let std_ind = item.standard_indicator_capmkt.trim();
-        let std_ctx = item.standard_context_reference.trim();
-
-        let fact_val = exact_facts
-            .get(&(std_ind, std_ctx))
-            .and_then(|v| v.first())
-            .or_else(|| {
-                if !std_ind.is_empty() {
-                    tag_facts.get(std_ind).and_then(|v| v.first())
-                } else {
-                    None
-                }
-            })
-            .map(|f| f.raw_value.clone());
+        let facts = lookup_item_facts(item, exact_facts, tag_facts);
+        let fact_val = facts.first().map(|f| f.raw_value.clone());
 
         let final_val = fact_val
             .or_else(|| resolve_profile_value(item, current_profile).map(|s| s.into_owned()));

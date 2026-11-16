@@ -76,6 +76,7 @@ BEGIN
     NEW.section               := TRIM(NEW.section);
     NEW.indicator_type        := TRIM(NEW.indicator_type);
     NEW.followup_group        := NULLIF(NULLIF(TRIM(NEW.followup_group), '0'), '');
+    NEW.render_kind           := TRIM(NEW.render_kind);
     NEW.section_text          := clean_brsr_text(NEW.section_text);
     NEW.principle_text        := NULLIF(clean_brsr_text(NEW.principle_text), 'NA');
     NEW.sub_section_text      := NULLIF(clean_brsr_text(NEW.sub_section_text), 'NA');
@@ -83,6 +84,7 @@ BEGIN
     NEW.question_text         := COALESCE(clean_brsr_text(NEW.question_text), '');
     NEW.std_tag               := NULLIF(NULLIF(NULLIF(TRIM(NEW.std_tag), '0'), ''), 'FORMULA_IGNORE');
     NEW.std_context           := NULLIF(NULLIF(TRIM(NEW.std_context), '0'), '');
+    NEW.response_datatype     := TRIM(NEW.response_datatype);
     NEW.append_to_field       := NULLIF(NULLIF(TRIM(NEW.append_to_field), '0'), '');
     NEW.friendly_grouping     := NULLIF(NULLIF(TRIM(NEW.friendly_grouping), '0'), '');
     NEW.visibility_parent_key := NULLIF(NULLIF(TRIM(NEW.visibility_parent_key), '0'), '');

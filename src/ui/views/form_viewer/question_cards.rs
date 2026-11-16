@@ -4,7 +4,9 @@ use super::components::{render_indicator_badge, render_singular_box};
 use super::formatter::humanize_context;
 use super::profile::resolve_profile_value;
 use super::tables;
-use super::visibility::{build_question_gates, build_response_index, is_visibility_satisfied};
+use super::visibility::{
+    build_question_gates, build_response_index, is_visibility_satisfied, lookup_item_facts,
+};
 
 use crate::ui::state::{AppState, CompanyFilingSummary, FormFactRow, FormMasterItem};
 use eframe::egui::{self, Color32, Frame, Margin, RichText, Stroke, Ui};
@@ -82,6 +84,7 @@ pub fn render(
         .as_deref()
         .is_some_and(|f| is_leadership(f, ""));
 
+    // Group all visible items into question cards BEFORE applying search filtering so tables stay intact
     let mut grouped_questions: BTreeMap<(i16, bool, i16), Vec<&FormMasterItem>> = BTreeMap::new();
 
     for item in &state.form_viewer.form_template {
@@ -116,35 +119,34 @@ pub fn render(
             continue;
         }
 
-        if !search_lower.is_empty() {
-            let matches = item
-                .question_text
-                .to_ascii_lowercase()
-                .contains(search_lower)
-                || item
-                    .standard_indicator_capmkt
-                    .to_ascii_lowercase()
-                    .contains(search_lower)
-                || exact_facts
-                    .get(&(
-                        item.standard_indicator_capmkt.trim(),
-                        item.standard_context_reference.trim(),
-                    ))
-                    .or_else(|| tag_facts.get(item.standard_indicator_capmkt.trim()))
-                    .is_some_and(|list| {
-                        list.iter()
-                            .any(|f| f.raw_value.to_ascii_lowercase().contains(search_lower))
-                    });
-
-            if !matches {
-                continue;
-            }
-        }
-
         grouped_questions
             .entry((item.sub_section, is_lead, item.question_number))
             .or_default()
             .push(item);
+    }
+
+    // Apply search filter at the question-card level so matching a line item keeps the full table intact
+    if !search_lower.is_empty() {
+        grouped_questions.retain(|_, items| {
+            items.iter().any(|item| {
+                item.question_text
+                    .to_ascii_lowercase()
+                    .contains(search_lower)
+                    || item
+                        .standard_indicator_capmkt
+                        .to_ascii_lowercase()
+                        .contains(search_lower)
+                    || item
+                        .input_text
+                        .as_deref()
+                        .is_some_and(|h| h.to_ascii_lowercase().contains(search_lower))
+                    || lookup_item_facts(item, exact_facts, tag_facts)
+                        .iter()
+                        .any(|f| f.raw_value.to_ascii_lowercase().contains(search_lower))
+                    || resolve_profile_value(item, current_profile)
+                        .is_some_and(|v| v.to_ascii_lowercase().contains(search_lower))
+            })
+        });
     }
 
     if grouped_questions.is_empty() {
@@ -240,18 +242,9 @@ fn render_singular_item(
     tag_facts: &HashMap<&str, Vec<&FormFactRow>>,
     current_profile: Option<&CompanyFilingSummary>,
 ) {
-    let std_ind = first_item.standard_indicator_capmkt.trim();
-    let std_ctx = first_item.standard_context_reference.trim();
+    let facts = lookup_item_facts(first_item, exact_facts, tag_facts);
 
-    let facts = exact_facts.get(&(std_ind, std_ctx)).or_else(|| {
-        if !std_ind.is_empty() {
-            tag_facts.get(std_ind)
-        } else {
-            None
-        }
-    });
-
-    let profile_val = if facts.is_none_or(|v| v.is_empty()) {
+    let profile_val = if facts.is_empty() {
         resolve_profile_value(first_item, current_profile)
     } else {
         None
@@ -267,10 +260,8 @@ fn render_singular_item(
             "",
             &first_item.response_datatype,
         );
-    } else if let Some(matching) = facts
-        && !matching.is_empty()
-    {
-        for f in matching {
+    } else if !facts.is_empty() {
+        for f in facts {
             let ctx_label = humanize_context(&f.context_ref);
             render_singular_box(
                 ui,

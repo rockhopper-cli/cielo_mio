@@ -9,9 +9,6 @@ CREATE TABLE unit_conversions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
 );
 
--- index
-CREATE INDEX idx_unit_raw_lookup ON unit_conversions (raw_unit);
-
 -- comments 8
 COMMENT ON TABLE unit_conversions IS 'Mathematical conversion multipliers standardizing arbitrary engineering units into base SI metrics';
 COMMENT ON COLUMN unit_conversions.conversion_id IS 'Unique UUID for the unit rule';

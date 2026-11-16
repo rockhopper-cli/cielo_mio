@@ -1,3 +1,15 @@
+-- function - Shared deterministic company name normalizer for fuzzy trigram matching
+CREATE OR REPLACE FUNCTION normalize_company_name(raw_name TEXT)
+RETURNS VARCHAR(255) AS $$
+    SELECT NULLIF(TRIM(REGEXP_REPLACE(
+        REGEXP_REPLACE(
+            UPPER(COALESCE(raw_name, '')),
+            '\m(LIMITED|LTD|PRIVATE|PVT|CO|CORP|CORPORATION)\M', '', 'g'
+        ),
+        '[^A-Z0-9]+', ' ', 'g'
+    )), '')::VARCHAR(255);
+$$ LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE;
+
 -- create table - Verified BSE & NSE Industry Classification Master (Multi-Key: ISIN, Symbol, Scrip, CIN)
 CREATE TABLE exchange_industry_master (
     master_id UUID PRIMARY KEY DEFAULT uuidv7(),
@@ -6,12 +18,7 @@ CREATE TABLE exchange_industry_master (
     symbol VARCHAR(50) NULL,
     scrip_code VARCHAR(20) NULL,
     company_name VARCHAR(255) NOT NULL,
-    normalized_name VARCHAR(255) GENERATED ALWAYS AS (
-        TRIM(REGEXP_REPLACE(
-            REGEXP_REPLACE(UPPER(company_name), '\m(LIMITED|LTD|PRIVATE|PVT|CO|CORP|CORPORATION)\M', '', 'g'),
-            '[^A-Z0-9]+', ' ', 'g'
-        ))
-    ) STORED,
+    normalized_name VARCHAR(255) GENERATED ALWAYS AS (normalize_company_name(company_name)) STORED,
     macro_sector VARCHAR(100) NOT NULL,
     sector VARCHAR(100) NOT NULL,
     industry VARCHAR(120) NOT NULL,
@@ -19,9 +26,7 @@ CREATE TABLE exchange_industry_master (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
 );
 
--- index
-CREATE INDEX idx_ex_ind_isin ON exchange_industry_master (isin);
-CREATE INDEX idx_ex_ind_cin ON exchange_industry_master (cin);
+-- index (isin and cin already have unique B-tree indexes from UNIQUE constraints)
 CREATE INDEX idx_ex_ind_symbol ON exchange_industry_master (UPPER(symbol));
 CREATE INDEX idx_ex_ind_scrip ON exchange_industry_master (scrip_code);
 CREATE INDEX idx_ex_ind_sector ON exchange_industry_master (sector);

@@ -3,7 +3,16 @@
 use reqwest::Client;
 use serde_json::Value;
 use std::process::Command;
+use std::sync::{LazyLock, OnceLock};
 use std::time::Duration;
+
+static RUNTIME: OnceLock<&'static str> = OnceLock::new();
+static HEALTH_HTTP: LazyLock<Client> = LazyLock::new(|| {
+    Client::builder()
+        .timeout(Duration::from_millis(1500))
+        .build()
+        .unwrap_or_default()
+});
 
 #[derive(Debug, Clone, Default)]
 #[allow(dead_code)]
@@ -15,21 +24,23 @@ pub struct ContainerStatus {
 }
 
 fn detect_runtime() -> &'static str {
-    if Command::new("podman")
-        .arg("--version")
-        .output()
-        .is_ok_and(|o| o.status.success())
-    {
-        "podman"
-    } else if Command::new("docker")
-        .arg("--version")
-        .output()
-        .is_ok_and(|o| o.status.success())
-    {
-        "docker"
-    } else {
-        "podman"
-    }
+    RUNTIME.get_or_init(|| {
+        if Command::new("podman")
+            .arg("--version")
+            .output()
+            .is_ok_and(|o| o.status.success())
+        {
+            "podman"
+        } else if Command::new("docker")
+            .arg("--version")
+            .output()
+            .is_ok_and(|o| o.status.success())
+        {
+            "docker"
+        } else {
+            "podman"
+        }
+    })
 }
 
 /// Checks if the name/ID refers to a Podman Pod
@@ -131,13 +142,8 @@ pub async fn check_service_health(container_name: &str, endpoint_url: &str) -> C
         .await
         .unwrap_or(false);
 
-    let client = Client::builder()
-        .timeout(Duration::from_millis(1500))
-        .build()
-        .unwrap_or_default();
-
     let url = format!("{}/api/tags", endpoint_url.trim_end_matches('/'));
-    match client.get(&url).send().await {
+    match HEALTH_HTTP.get(&url).send().await {
         Ok(resp) if resp.status().is_success() => {
             let mut models = Vec::new();
             if let Ok(json) = resp.json::<Value>().await

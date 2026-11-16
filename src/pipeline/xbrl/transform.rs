@@ -3,7 +3,7 @@
 use crate::domain::entity::EntityProfile;
 use crate::domain::facts::{EnrichedFact, ParsedFiling};
 use crate::domain::taxonomy::FormRule;
-use crate::domain::units::{parse_number, parse_xbrl_numeric};
+use crate::domain::units::parse_decimal;
 use chrono::NaiveDate;
 use sqlx::{PgPool, Row};
 use std::borrow::Cow;
@@ -199,15 +199,6 @@ impl FormDictionary {
                 .or_else(|| fact.standard_unit_ref.clone())
                 .or_else(|| fact.unit_ref.clone());
 
-            let numeric_val = if fact.datatype == "number" {
-                parse_xbrl_numeric(
-                    clean_val,
-                    fact.unit_ref.is_some() || fact.decimals.is_some(),
-                )
-            } else {
-                None
-            };
-
             enriched.push(EnrichedFact {
                 client_id: if !fact.client_id.is_empty() {
                     fact.client_id.clone()
@@ -225,14 +216,14 @@ impl FormDictionary {
                 friendly_grouping: friendly,
                 response_datatype: fact.datatype,
                 raw_value: clean_val.to_string(),
-                numeric_value: numeric_val,
+                numeric_value: fact.numeric_value,
                 unit_reference: fact.unit_ref.clone(),
                 standard_unit_reference: final_std_unit,
                 decimals: fact.decimals,
                 standard_raw_value: fact
                     .standard_value_str
                     .clone()
-                    .or_else(|| fact.standard_value.map(|v| v.to_string()))
+                    .or_else(|| fact.standard_value.map(|v| v.normalize().to_string()))
                     .or_else(|| Some(clean_val.to_string())),
                 standard_numeric_value: fact.standard_value,
             });
@@ -294,7 +285,8 @@ impl FormDictionary {
                 .or_else(|| take_profile(&mut entity_map, "TelephoneNumber")),
             website: take_profile(&mut entity_map, "WebsiteOfCompany")
                 .or_else(|| take_profile(&mut entity_map, "Website")),
-            reporting_boundary: take_profile(&mut entity_map, "ReportingBoundary"),
+            reporting_boundary: take_profile(&mut entity_map, "ReportingBoundary")
+                .map(|raw| normalize_reporting_boundary(&raw)),
             financial_year_start: get_profile(&entity_map, "DateOfStartOfFinancialYear")
                 .or_else(|| get_profile(&entity_map, "FinancialYearStartDate"))
                 .and_then(parse_date),
@@ -306,7 +298,7 @@ impl FormDictionary {
                 .and_then(parse_date),
             paid_up_shares_value: get_profile(&entity_map, "ValueOfSharesPaidUp")
                 .or_else(|| get_profile(&entity_map, "PaidUpValueOfShares"))
-                .and_then(parse_number),
+                .and_then(parse_decimal),
             contact_person_name: take_profile(&mut entity_map, "NameOfContactPerson"),
             contact_person_phone: take_profile(&mut entity_map, "ContactNumberOfContactPerson")
                 .or_else(|| take_profile(&mut entity_map, "TelephoneOfContactPerson")),
@@ -315,6 +307,18 @@ impl FormDictionary {
         };
 
         (enriched, profile)
+    }
+}
+
+fn normalize_reporting_boundary(raw: &str) -> String {
+    let trimmed = raw.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.contains("consolidat") {
+        "Consolidated".to_string()
+    } else if lower.contains("standalone") {
+        "Standalone".to_string()
+    } else {
+        trimmed.chars().take(50).collect()
     }
 }
 

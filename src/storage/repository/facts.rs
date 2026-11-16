@@ -72,16 +72,9 @@ pub async fn clear_prior_file_data(
 }
 
 #[inline]
-fn to_numeric_20_4(val: Option<f64>) -> Option<Decimal> {
-    val.filter(|v| v.is_finite() && v.abs() < 1e16)
-        .and_then(|v| Decimal::try_from(v).ok())
-        .map(|d| d.round_dp(4))
-}
-
-#[inline]
-fn to_unconstrained_numeric(val: Option<f64>) -> Option<Decimal> {
-    val.filter(|v| v.is_finite())
-        .and_then(|v| Decimal::try_from(v).ok())
+fn clamp_numeric_20_4(val: Option<Decimal>) -> Option<Decimal> {
+    let limit = Decimal::from(10_000_000_000_000_000_i64); // fits NUMERIC(20, 4)
+    val.filter(|d| d.abs() < limit).map(|d| d.round_dp(4))
 }
 
 /// Bulk inserts facts in 500-item chunks using QueryBuilder
@@ -105,8 +98,8 @@ pub async fn insert_facts_batch(
         );
 
         qb.push_values(chunk, |mut b, fact| {
-            let num_dec = to_numeric_20_4(fact.numeric_value);
-            let std_num_dec = to_unconstrained_numeric(fact.standard_numeric_value);
+            let num_dec = clamp_numeric_20_4(fact.numeric_value);
+            let std_num_dec = fact.standard_numeric_value;
 
             b.push_bind(&fact.section)
                 .push_bind(fact.principle_number)

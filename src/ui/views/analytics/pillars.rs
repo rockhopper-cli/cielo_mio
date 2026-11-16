@@ -223,6 +223,14 @@ fn render_governance_metric(ui: &mut Ui, records: &[&CompanyEsgMetrics], state: 
     );
 }
 
+fn fmt_val(v: f64) -> String {
+    if v != 0.0 && v.abs() < 0.1 {
+        format!("{:.4}", v)
+    } else {
+        format!("{:.2}", v)
+    }
+}
+
 fn render_metric_dashboard_layout(
     ui: &mut Ui,
     records: &[&CompanyEsgMetrics],
@@ -275,30 +283,39 @@ fn render_metric_dashboard_layout(
             ui.label(RichText::new(format!("{} vs Sector Median:", metric_name)).strong());
             ui.add_space(4.0);
 
-            if let Some(c_val) = latest_val_opt {
-                ui.label(format!(
-                    "Company: {:.2} | Sector Median: {:.2}",
-                    c_val, sector_median
-                ));
-                charts::render_peer_comparison(ui, "peer_comp_plot", c_val, sector_median);
-            } else if sector_median > 0.0 {
-                ui.label(format!(
-                    "Company: Not Disclosed | Sector Median: {:.2}",
-                    sector_median
-                ));
-                charts::render_peer_comparison(ui, "peer_comp_plot", 0.0, sector_median);
-            } else {
-                ui.add_space(40.0);
-                ui.vertical_centered(|ui| {
-                    ui.label(
-                        RichText::new(format!(
-                            "ℹ No disclosures reported for this metric in sector '{}'",
-                            latest.industry_sector
-                        ))
-                        .color(Color32::from_rgb(160, 170, 185)),
-                    );
-                });
-                ui.add_space(40.0);
+            match (latest_val_opt, sector_median) {
+                (Some(c_val), Some(s_med)) => {
+                    ui.label(format!(
+                        "Company: {} | Sector Median: {}",
+                        fmt_val(c_val),
+                        fmt_val(s_med)
+                    ));
+                    charts::render_peer_comparison(ui, "peer_comp_plot", c_val, s_med);
+                }
+                (Some(c_val), None) => {
+                    ui.label(format!("Company: {} | Sector Median: N/A", fmt_val(c_val)));
+                    charts::render_peer_comparison(ui, "peer_comp_plot", c_val, 0.0);
+                }
+                (None, Some(s_med)) => {
+                    ui.label(format!(
+                        "Company: Not Disclosed | Sector Median: {}",
+                        fmt_val(s_med)
+                    ));
+                    charts::render_peer_comparison(ui, "peer_comp_plot", 0.0, s_med);
+                }
+                (None, None) => {
+                    ui.add_space(40.0);
+                    ui.vertical_centered(|ui| {
+                        ui.label(
+                            RichText::new(format!(
+                                "ℹ No disclosures reported for this metric in sector '{}'",
+                                latest.industry_sector
+                            ))
+                            .color(Color32::from_rgb(160, 170, 185)),
+                        );
+                    });
+                    ui.add_space(40.0);
+                }
             }
         });
     });

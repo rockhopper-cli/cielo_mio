@@ -72,6 +72,7 @@ pub async fn download_file_atomic(
     let mut file = File::create(&part_path).await?;
     let mut stream = response.bytes_stream();
     let mut first_bytes_checked = false;
+    let mut total_bytes: usize = 0;
 
     while let Some(chunk_result) = stream.next().await {
         if cancel_token.is_cancelled() {
@@ -85,6 +86,7 @@ pub async fn download_file_atomic(
                 if !first_bytes_checked && !chunk.is_empty() {
                     first_bytes_checked = true;
                     let head = String::from_utf8_lossy(&chunk[..chunk.len().min(128)])
+                        .trim_start_matches('\u{FEFF}')
                         .trim_start()
                         .to_ascii_lowercase();
                     if (head.starts_with("<!doctype html") || head.starts_with("<html"))
@@ -96,6 +98,7 @@ pub async fn download_file_atomic(
                     }
                 }
 
+                total_bytes += chunk.len();
                 if let Err(e) = file.write_all(&chunk).await {
                     drop(file);
                     let _ = fs::remove_file(&part_path).await;
@@ -108,6 +111,14 @@ pub async fn download_file_atomic(
                 return Err(DownloadError::Network(e));
             }
         }
+    }
+
+    if total_bytes == 0 {
+        drop(file);
+        let _ = fs::remove_file(&part_path).await;
+        return Err(DownloadError::UnexpectedHtml(
+            "Empty 0-byte response body".into(),
+        ));
     }
 
     file.flush().await?;

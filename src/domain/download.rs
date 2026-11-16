@@ -90,18 +90,20 @@ pub enum DownloadEvent {
     },
 }
 
-/// Generates sliding <= 1-year windows from start_date to end_date
+/// Generates sliding <= 365-day windows from start_date to end_date
 pub fn generate_date_windows(start: NaiveDate, end: NaiveDate) -> Vec<(NaiveDate, NaiveDate)> {
     let mut windows = Vec::new();
     let mut cur = start;
 
     while cur <= end {
         let next_year = cur.year() + 1;
-        let nxt_candidate = NaiveDate::from_ymd_opt(next_year, cur.month(), cur.day())
+        let anniv_minus_one = NaiveDate::from_ymd_opt(next_year, cur.month(), cur.day())
             .unwrap_or_else(|| NaiveDate::from_ymd_opt(next_year, cur.month(), 28).unwrap())
             - chrono::Duration::days(1);
 
-        let nxt = nxt_candidate.min(end);
+        // Enforce <= 365 inclusive days even across Feb 29 in leap years
+        let max_365_days = cur + chrono::Duration::days(364);
+        let nxt = anniv_minus_one.min(max_365_days).min(end);
         windows.push((cur, nxt));
         cur = nxt + chrono::Duration::days(1);
     }

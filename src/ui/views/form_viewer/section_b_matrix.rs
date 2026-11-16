@@ -1,21 +1,12 @@
 // src/ui/views/form_viewer/section_b_matrix.rs
 
+use super::question_cards::strip_leading_numbers;
 use crate::ui::state::{AppState, FormFactRow, FormMasterItem};
 use eframe::egui::{self, Color32, FontId, Frame, Margin, RichText, ScrollArea, Stroke, Ui};
 use egui_extras::{Column, TableBuilder};
 use std::collections::{BTreeMap, HashMap};
 
-const PRINCIPLE_PATTERNS: [&[&str]; 9] = [
-    &["Principle1", "Principle_1", "Principle 1", "Axis1", "P1"],
-    &["Principle2", "Principle_2", "Principle 2", "Axis2", "P2"],
-    &["Principle3", "Principle_3", "Principle 3", "Axis3", "P3"],
-    &["Principle4", "Principle_4", "Principle 4", "Axis4", "P4"],
-    &["Principle5", "Principle_5", "Principle 5", "Axis5", "P5"],
-    &["Principle6", "Principle_6", "Principle 6", "Axis6", "P6"],
-    &["Principle7", "Principle_7", "Principle 7", "Axis7", "P7"],
-    &["Principle8", "Principle_8", "Principle 8", "Axis8", "P8"],
-    &["Principle9", "Principle_9", "Principle 9", "Axis9", "P9"],
-];
+const PRINCIPLE_NUMS: [usize; 9] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 type SectionBGroupKey = (i16, String, String, String);
 type SectionBGroupVal<'a> = (String, Vec<&'a FormMasterItem>);
@@ -216,12 +207,12 @@ pub fn render(
                                             .and_then(|v| v.first().copied())
                                             .or_else(|| {
                                                 tag_facts.get(std_ind).and_then(|list| {
-                                                    let patterns = PRINCIPLE_PATTERNS[p_idx];
                                                     list.iter()
                                                         .find(|f| {
-                                                            patterns.iter().any(|pat| {
-                                                                f.context_ref.contains(pat)
-                                                            })
+                                                            context_matches_principle(
+                                                                &f.context_ref,
+                                                                p_idx + 1,
+                                                            )
                                                         })
                                                         .copied()
                                                 })
@@ -259,35 +250,38 @@ fn measure_wrapped_height(ui: &Ui, text: &str, font_id: FontId, width: f32) -> f
     (h + 10.0).max(26.0)
 }
 
+fn context_matches_principle(ctx: &str, p: usize) -> bool {
+    let patterns = [
+        format!("Principle{}", p),
+        format!("Principle_{}", p),
+        format!("Principle {}", p),
+        format!("Axis{}", p),
+        format!("P{}", p),
+    ];
+
+    patterns.iter().any(|needle| {
+        ctx.match_indices(needle).any(|(idx, _)| {
+            let before = ctx[..idx].chars().next_back();
+            let after = ctx[idx + needle.len()..].chars().next();
+            let left_ok = needle.len() > 2 || before.is_none_or(|c| !c.is_ascii_alphanumeric());
+            let right_ok = after.is_none_or(|c| !c.is_ascii_digit());
+            left_ok && right_ok
+        })
+    })
+}
+
 #[inline]
 fn get_principle_number(item: &FormMasterItem) -> Option<usize> {
     let ctx = item.standard_context_reference.as_str();
-    for (idx, patterns) in PRINCIPLE_PATTERNS.iter().enumerate() {
-        if patterns.iter().any(|pat| ctx.contains(pat)) {
-            return Some(idx + 1);
+    for p in PRINCIPLE_NUMS {
+        if context_matches_principle(ctx, p) {
+            return Some(p);
         }
     }
     if (1..=9).contains(&item.principle_number) {
         return Some(item.principle_number as usize);
     }
     None
-}
-
-#[inline]
-fn strip_leading_numbers(s: &str) -> &str {
-    let trimmed = s.trim();
-    let mut chars = trimmed.chars();
-    let mut digits = 0;
-    while let Some(c) = chars.next() {
-        if c.is_ascii_digit() {
-            digits += 1;
-        } else if (c == '.' || c == ')') && digits > 0 {
-            return chars.as_str().trim_start();
-        } else {
-            break;
-        }
-    }
-    trimmed
 }
 
 fn render_badge_or_text(ui: &mut Ui, text: &str) {

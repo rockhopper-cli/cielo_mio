@@ -1,4 +1,4 @@
-// src/storage/repository/mod.rs
+// src/storage/repository.rs
 
 pub mod analytics;
 pub mod entities;

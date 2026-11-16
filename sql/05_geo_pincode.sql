@@ -39,23 +39,41 @@ COMMENT ON COLUMN geo_pincode.accuracy IS 'Coordinate precision rating from 1 (e
 CREATE OR REPLACE FUNCTION trg_resolve_entity_coordinates()
 RETURNS TRIGGER AS $$
 DECLARE
-    raw_addr TEXT;
-    pin_match TEXT[];
+    addr TEXT;
+    addr_candidates TEXT[];
+    pin_match RECORD;
     clean_pin VARCHAR(6);
     geo RECORD;
+    found_any_pin BOOLEAN := FALSE;
 BEGIN
-    raw_addr := CONCAT_WS(' ',
+    -- Reset resolved geo columns so address updates never retain stale coordinates
+    NEW.latitude := NULL;
+    NEW.longitude := NULL;
+    NEW.resolved_state := NULL;
+    NEW.resolved_city := NULL;
+
+    addr_candidates := ARRAY[
         NULLIF(TRIM(NEW.address_registered_office), ''),
         NULLIF(TRIM(NEW.address_corporate_office), '')
-    );
+    ];
 
-    IF raw_addr <> '' THEN
-        NEW.geocode_status := 'NO_PINCODE';
-        -- Iterate through all 6-digit PIN candidates (reversed preference via array check)
+    IF addr_candidates[1] IS NULL AND addr_candidates[2] IS NULL THEN
+        NEW.geocode_status := 'NO_ADDRESS';
+        RETURN NEW;
+    END IF;
+
+    FOREACH addr IN ARRAY addr_candidates
+    LOOP
+        CONTINUE WHEN addr IS NULL;
+
+        -- Iterate right-to-left (Indian PIN codes appear at the end of addresses)
         FOR pin_match IN
-            SELECT regexp_matches(raw_addr, '\y([1-9][0-9]{2}\s?[0-9]{3})\y', 'g')
+            SELECT m[1] AS pin
+            FROM regexp_matches(addr, '\y([1-9][0-9]{2}\s?[0-9]{3})\y', 'g') WITH ORDINALITY AS t(m, ord)
+            ORDER BY ord DESC
         LOOP
-            clean_pin := replace(pin_match[1], ' ', '');
+            found_any_pin := TRUE;
+            clean_pin := replace(pin_match.pin, ' ', '');
 
             SELECT
                 ROUND(AVG(latitude)::numeric, 4)::double precision AS latitude,
@@ -73,15 +91,11 @@ BEGIN
                 NEW.resolved_city := COALESCE(geo.district_name, 'Unknown City');
                 NEW.geocode_status := 'RESOLVED';
                 RETURN NEW;
-            ELSE
-                NEW.geocode_status := 'NOT_FOUND';
             END IF;
         END LOOP;
-    ELSE
-        NEW.geocode_status := 'NO_ADDRESS';
-    END IF;
+    END LOOP;
 
+    NEW.geocode_status := CASE WHEN found_any_pin THEN 'NOT_FOUND' ELSE 'NO_PINCODE' END;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-

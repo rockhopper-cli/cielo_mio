@@ -2,7 +2,15 @@
 
 use reqwest::Client;
 use serde_json::json;
+use std::sync::LazyLock;
 use std::time::Duration;
+
+static AI_HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .unwrap_or_default()
+});
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LlmProvider {
@@ -17,12 +25,10 @@ pub struct LlmClient {
 
 impl LlmClient {
     pub fn new(provider: LlmProvider) -> Self {
-        let http = Client::builder()
-            .timeout(Duration::from_secs(60))
-            .build()
-            .unwrap();
-
-        Self { http, provider }
+        Self {
+            http: AI_HTTP_CLIENT.clone(),
+            provider,
+        }
     }
 
     /// Sends prompt with verified statutory context and receives grounded response

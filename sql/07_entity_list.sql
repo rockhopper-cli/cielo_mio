@@ -86,15 +86,15 @@ COMMENT ON COLUMN entity_list.paid_up_shares_value IS 'Paid-up share capital = T
 COMMENT ON COLUMN entity_list.nic_code IS 'Validated 5-digit NIC code extracted strictly from structurally valid 21-char MCA CINs (NULL otherwise)';
 COMMENT ON COLUMN entity_list.industry_division IS 'SEBI/Exchange detailed industry division';
 COMMENT ON COLUMN entity_list.industry_sector IS 'Peer group category used for cross-company ESG analytics and intensity benchmarking';
-COMMENT ON COLUMN entity_list.industry_source IS 'Audit source showing how industry was resolved (EXCHANGE_ISIN, EXCHANGE_TICKER, EXCHANGE_CIN, EXCHANGE_NAME, UNCLASSIFIED)';
+COMMENT ON COLUMN entity_list.industry_source IS 'Audit source showing how industry was resolved (EXCHANGE_ISIN, EXCHANGE_TICKER, EXCHANGE_CIN, EXCHANGE_NAME, NIC_5DIGIT, NIC_2DIGIT, STATUTORY_KEYWORD, UNCLASSIFIED)';
 COMMENT ON COLUMN entity_list.latitude IS 'Geocoded latitude coordinate of registered or corporate office';
 COMMENT ON COLUMN entity_list.longitude IS 'Geocoded longitude coordinate of registered or corporate office';
-COMMENT ON COLUMN entity_list.geocode_status IS 'Audit status: PENDING, RESOLVED, NOT_FOUND, or ERROR';
+COMMENT ON COLUMN entity_list.geocode_status IS 'Audit status: PENDING, RESOLVED, NOT_FOUND, NO_PINCODE, or NO_ADDRESS';
 COMMENT ON COLUMN entity_list.resolved_state IS 'Normalized State or Union Territory resolved from geocoding lookup';
 COMMENT ON COLUMN entity_list.resolved_city IS 'Normalized City, Town, or District resolved from geocoding lookup';
 COMMENT ON COLUMN entity_list.created_at IS 'Timestamp when the entity master record was inserted';
 
--- function - Multi-Key Deterministic Industry Resolution (No legacy NIC-from-CIN fallback)
+-- function - Multi-Key Deterministic Industry Resolution (Exchange Master -> NIC 5/2-Digit -> Statutory Fallback)
 CREATE OR REPLACE FUNCTION trg_enrich_entity_industry()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -138,6 +138,7 @@ BEGIN
         INTO ex
         FROM exchange_industry_master
         WHERE UPPER(symbol) = clean_sym
+        ORDER BY updated_at DESC
         LIMIT 1;
 
         IF FOUND THEN
@@ -154,6 +155,7 @@ BEGIN
         INTO ex
         FROM exchange_industry_master
         WHERE scrip_code = clean_scrip
+        ORDER BY updated_at DESC
         LIMIT 1;
 
         IF FOUND THEN
@@ -182,12 +184,9 @@ BEGIN
 
     -- Tier 4: Normalized Company Name Fuzzy Match (pg_trgm >= 0.85)
     IF upper_name <> '' THEN
-        clean_name := TRIM(REGEXP_REPLACE(
-            REGEXP_REPLACE(upper_name, '\m(LIMITED|LTD|PRIVATE|PVT|CO|CORP|CORPORATION)\M', '', 'g'),
-            '[^A-Z0-9]+', ' ', 'g'
-        ));
+        clean_name := normalize_company_name(NEW.company_name);
 
-        IF LENGTH(clean_name) >= 4 THEN
+        IF clean_name IS NOT NULL AND LENGTH(clean_name) >= 4 THEN
             SELECT sector, industry
             INTO ex
             FROM exchange_industry_master
@@ -242,7 +241,7 @@ BEGIN
 
     -- Tier 6: Statutory / Non-MCA Entities (e.g., SBI, LIC, PSBs without 21-char MCA CIN)
     IF upper_name <> '' THEN
-        IF upper_name ~ '\m(BANK|FINANCE|FINSERV|INSURANCE|ASSURANCE|SECURITIES|MUTUAL FUND|CAPITAL)\M' THEN
+        IF upper_name ~ '\m(BANK|FINANCE|FINANCIAL|FINSERV|INSURANCE|ASSURANCE|SECURITIES|MUTUAL FUND|CAPITAL)\M' THEN
             NEW.industry_division := 'Banking, Financial Services & Insurance';
             NEW.industry_sector := 'Banking & Financial Services';
             NEW.industry_source := 'STATUTORY_KEYWORD';
@@ -281,7 +280,7 @@ BEGIN
     UPDATE entity_list
     SET corporate_id_number = corporate_id_number
     WHERE industry_source IS NULL
-       OR industry_source = 'UNCLASSIFIED'
+       OR industry_source NOT IN ('EXCHANGE_ISIN', 'EXCHANGE_TICKER', 'EXCHANGE_CIN', 'EXCHANGE_NAME')
        OR industry_sector = 'Unclassified';
 
     GET DIAGNOSTICS updated_count = ROW_COUNT;

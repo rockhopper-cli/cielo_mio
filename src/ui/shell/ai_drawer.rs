@@ -6,6 +6,7 @@ use crate::ui::state::{AppState, ChatMessage, CopilotTelemetry, SelectedLlm};
 use eframe::egui::{self, Color32, Key, Margin, RichText, ScrollArea, Stroke, TextEdit, Ui};
 use std::sync::atomic::Ordering;
 use std::time::Instant;
+use uuid::Uuid;
 
 pub fn render_ai_copilot_drawer(ui: &mut Ui, state: &mut AppState, contextual_hint: &str) {
     ui.horizontal_wrapped(|ui| {
@@ -209,13 +210,9 @@ pub fn render_ai_copilot_drawer(ui: &mut Ui, state: &mut AppState, contextual_hi
                         content: prompt.clone(),
                     });
 
-                    let (grounded_context, fact_count, company_name, cin) =
+                    let (grounded_context, fact_count, company_name, cin, entity_id) =
                         build_grounded_context(state);
 
-                    state.add_log(format!(
-                        "[COPILOT] Query initiated for '{}': \"{}\"",
-                        company_name, prompt
-                    ));
                     dispatch_copilot_request(
                         state,
                         prompt,
@@ -223,6 +220,7 @@ pub fn render_ai_copilot_drawer(ui: &mut Ui, state: &mut AppState, contextual_hi
                         fact_count,
                         company_name,
                         cin,
+                        entity_id,
                     );
                 }
             });
@@ -231,38 +229,68 @@ pub fn render_ai_copilot_drawer(ui: &mut Ui, state: &mut AppState, contextual_hi
     ui.add_space(6.0);
 }
 
-/// Builds verified context from active state without fabricating 0.0 for undisclosed Option<f64> fields
-fn build_grounded_context(state: &AppState) -> (String, usize, String, String) {
+/// Builds verified context from active state, prioritizing the currently inspected section/principle
+fn build_grounded_context(state: &AppState) -> (String, usize, String, String, Option<Uuid>) {
     let mut lines = Vec::new();
 
     if state.active_tab == crate::ui::state::ActiveTab::FormViewer {
+        let active_eid = state.form_viewer.selected_entity_id;
         let active_cin = state.form_viewer.selected_cin.clone();
-        let company_name = state
-            .form_viewer
-            .available_filings
-            .iter()
-            .find(|f| f.corporate_id_number == active_cin)
+        let company_name = active_eid
+            .and_then(|eid| {
+                state
+                    .form_viewer
+                    .available_filings
+                    .iter()
+                    .find(|f| f.entity_id == eid)
+            })
             .map(|f| f.company_name.clone())
             .unwrap_or_else(|| "Active Entity".to_string());
 
+        let sel_sec = &state.form_viewer.selected_section;
+        let sel_p = state.form_viewer.selected_principle;
+        let sel_sub = state.form_viewer.selected_sub_section;
+
+        let prioritized = state
+            .form_viewer
+            .current_facts
+            .iter()
+            .filter(|f| {
+                !f.raw_value.is_empty()
+                    && f.section == *sel_sec
+                    && (sel_p == 0 || f.principle_number == sel_p)
+                    && (sel_sub == 0 || f.sub_section == sel_sub)
+            })
+            .chain(state.form_viewer.current_facts.iter().filter(|f| {
+                !f.raw_value.is_empty()
+                    && !(f.section == *sel_sec
+                        && (sel_p == 0 || f.principle_number == sel_p)
+                        && (sel_sub == 0 || f.sub_section == sel_sub))
+            }));
+
         let mut count = 0;
-        for fact in &state.form_viewer.current_facts {
-            if !fact.raw_value.is_empty() {
-                lines.push(format!(
-                    " - [{}] {} ({}) = {} {}",
-                    fact.section,
-                    fact.standard_indicator,
-                    fact.context_ref,
-                    fact.raw_value,
-                    fact.standard_unit.as_deref().unwrap_or("")
-                ));
-                count += 1;
-                if count >= 60 {
-                    break;
-                }
+        for fact in prioritized {
+            lines.push(format!(
+                " - [Sec {}-P{}] {} ({}) = {} {}",
+                fact.section,
+                fact.principle_number,
+                fact.standard_indicator,
+                fact.context_ref,
+                fact.raw_value,
+                fact.standard_unit.as_deref().unwrap_or("")
+            ));
+            count += 1;
+            if count >= 60 {
+                break;
             }
         }
-        (lines.join("\n"), count, company_name, active_cin)
+        (
+            lines.join("\n"),
+            count,
+            company_name,
+            active_cin,
+            active_eid,
+        )
     } else {
         let active_cin = state.analytics.selected_cin.clone();
         let matching: Vec<&crate::ui::state::CompanyEsgMetrics> = state
@@ -353,6 +381,7 @@ fn build_grounded_context(state: &AppState) -> (String, usize, String, String) {
                 fact_count,
                 latest.company_name.clone(),
                 active_cin,
+                Some(latest.entity_id),
             )
         } else {
             (
@@ -360,6 +389,7 @@ fn build_grounded_context(state: &AppState) -> (String, usize, String, String) {
                 0,
                 "General Entity".to_string(),
                 String::new(),
+                None,
             )
         }
     }
@@ -372,6 +402,7 @@ fn dispatch_copilot_request(
     fact_count: usize,
     company_name: String,
     cin: String,
+    entity_id: Option<Uuid>,
 ) {
     let pool = match state.pool.clone() {
         Some(p) => p,
@@ -439,7 +470,13 @@ fn dispatch_copilot_request(
         let agent = RagAgent::new(pool, client);
 
         let result = agent
-            .answer_question(&company_name, &cin, &grounded_context, &user_query)
+            .answer_question(
+                entity_id,
+                &company_name,
+                &cin,
+                &grounded_context,
+                &user_query,
+            )
             .await;
 
         let latency_ms = start_time.elapsed().as_millis();

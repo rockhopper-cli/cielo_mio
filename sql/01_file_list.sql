@@ -1,7 +1,7 @@
 -- create table - Download & Ingestion State Machine Table
 CREATE TABLE file_list (
     file_id UUID PRIMARY KEY DEFAULT uuidv7(),
-    file_name VARCHAR(255) NOT NULL UNIQUE,
+    file_name VARCHAR(255) NOT NULL,
     stock_market VARCHAR(50) NOT NULL,
     symbol VARCHAR(50) NULL,
     scrip_code VARCHAR(20) NULL,
@@ -10,11 +10,12 @@ CREATE TABLE file_list (
     file_type VARCHAR(50) NOT NULL,
     mapped BOOLEAN NOT NULL DEFAULT FALSE,
     unmapped_reason TEXT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+
+    CONSTRAINT uq_file_list_name UNIQUE (file_name) INCLUDE (mapped)
 );
 
 -- index
-CREATE INDEX idx_file_list_lookup ON file_list (file_name, mapped);
 CREATE INDEX idx_file_list_market_date ON file_list (stock_market, upload_date DESC);
 CREATE INDEX idx_file_list_pending_xml ON file_list (upload_date DESC, file_name ASC)
 WHERE file_type = 'XML' AND mapped = FALSE AND unmapped_reason IS NULL;

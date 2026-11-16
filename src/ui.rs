@@ -77,12 +77,28 @@ impl Drop for BrsrApp {
     fn drop(&mut self) {
         let _ = self.state.config.save();
 
-        if self.state.config.manage_ollama_container {
-            let _ = crate::system::stop_container(&self.state.config.ollama_container_name);
-        }
+        let stop_ollama = self
+            .state
+            .config
+            .manage_ollama_container
+            .then(|| self.state.config.ollama_container_name.clone());
+        let stop_db = self
+            .state
+            .config
+            .manage_db_container
+            .then(|| self.state.config.db_container_name.clone());
 
-        if self.state.config.manage_db_container {
-            let _ = crate::system::stop_container(&self.state.config.db_container_name);
-        }
+        std::thread::scope(|s| {
+            if let Some(ref name) = stop_ollama {
+                s.spawn(|| {
+                    let _ = crate::system::stop_container(name);
+                });
+            }
+            if let Some(ref name) = stop_db {
+                s.spawn(|| {
+                    let _ = crate::system::stop_container(name);
+                });
+            }
+        });
     }
 }

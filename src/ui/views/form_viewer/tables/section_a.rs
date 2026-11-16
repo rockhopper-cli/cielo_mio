@@ -4,7 +4,7 @@ use super::super::components::render_table_subheading;
 use super::common::{CellData, fact_cell, find_fact, render_matrix_table, text_cell};
 use crate::ui::state::{FormFactRow, FormMasterItem};
 use eframe::egui::Ui;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 
 pub fn try_render(
     ui: &mut Ui,
@@ -52,43 +52,37 @@ fn render_assurance_scope_table(
     exact_facts: &HashMap<(&str, &str), Vec<&FormFactRow>>,
     salt: (&str, i16, i16, i16),
 ) {
-    let mut groups: BTreeMap<&str, [Option<&FormMasterItem>; 4]> = BTreeMap::new();
+    let mut order: Vec<&str> = Vec::new();
+    let mut groups: HashMap<&str, Vec<&FormMasterItem>> = HashMap::new();
+
     for item in items {
-        let idx = match item.question_order {
-            1..=4 => (item.question_order - 1) as usize,
-            _ => continue,
-        };
-        groups
-            .entry(item.followup_question_first.as_str())
-            .or_insert([None, None, None, None])[idx] = Some(item);
+        let fu = item.followup_question_first.as_str();
+        if !groups.contains_key(fu) {
+            order.push(fu);
+        }
+        groups.entry(fu).or_default().push(item);
     }
 
     let mut rows = Vec::new();
-    for (_fu, cols) in groups {
-        let Some(t_item) = cols[0].or(cols[1]) else {
+    for fu in order {
+        let cols = &groups[fu];
+        let Some(t_item) = cols.first().copied() else {
             continue;
         };
-        let assured_f = cols[1].and_then(|m| {
-            find_fact(
-                exact_facts,
-                m.standard_indicator_capmkt.trim(),
-                m.standard_context_reference.trim(),
-            )
-        });
-        let scope_f = cols[2].and_then(|m| {
-            find_fact(
-                exact_facts,
-                m.standard_indicator_capmkt.trim(),
-                m.standard_context_reference.trim(),
-            )
-        });
-        let rem_f = cols[3].and_then(|m| {
-            find_fact(
-                exact_facts,
-                m.standard_indicator_capmkt.trim(),
-                m.standard_context_reference.trim(),
-            )
-        });
+
+        let find_col = |idx: usize| -> Option<&FormFactRow> {
+            cols.get(idx).and_then(|m| {
+                find_fact(
+                    exact_facts,
+                    m.standard_indicator_capmkt.trim(),
+                    m.standard_context_reference.trim(),
+                )
+            })
+        };
+
+        let assured_f = find_col(1);
+        let scope_f = find_col(2);
+        let rem_f = find_col(3);
 
         if assured_f.is_none() && scope_f.is_none() && rem_f.is_none() {
             continue;

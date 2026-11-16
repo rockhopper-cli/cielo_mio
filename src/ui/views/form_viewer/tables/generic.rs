@@ -2,6 +2,7 @@
 
 use super::super::components::render_table_subheading;
 use super::super::profile::resolve_profile_value;
+use super::super::visibility::lookup_item_facts;
 use super::common::{
     CellData, fact_cell, find_fact, measure_height, render_cell_data, render_matrix_table,
     text_cell,
@@ -306,12 +307,8 @@ pub fn render_two_col_table(
             continue;
         }
 
-        let std_ctx = item.standard_context_reference.trim();
-        let facts = exact_facts
-            .get(&(std_ind, std_ctx))
-            .or_else(|| tag_facts.get(std_ind));
-
-        let profile_val = if facts.is_none_or(|v| v.is_empty()) {
+        let facts = lookup_item_facts(item, exact_facts, tag_facts);
+        let profile_val = if facts.is_empty() {
             resolve_profile_value(item, current_profile)
         } else {
             None
@@ -328,10 +325,8 @@ pub fn render_two_col_table(
                     suffix: None,
                 }),
             ));
-        } else if let Some(matching) = facts
-            && !matching.is_empty()
-        {
-            for f in matching {
+        } else if !facts.is_empty() {
+            for f in facts {
                 rows.push((
                     label.to_string(),
                     Some(CellData::from_fact(

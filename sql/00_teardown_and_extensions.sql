@@ -19,6 +19,7 @@ DROP TABLE IF EXISTS data_dictionary CASCADE;
 DROP FUNCTION IF EXISTS trg_resolve_entity_coordinates() CASCADE;
 DROP FUNCTION IF EXISTS trg_enrich_entity_industry() CASCADE;
 DROP FUNCTION IF EXISTS sync_entity_industries() CASCADE;
+DROP FUNCTION IF EXISTS normalize_company_name(TEXT) CASCADE;
 DROP FUNCTION IF EXISTS trg_clean_form_layout() CASCADE;
 DROP FUNCTION IF EXISTS clean_brsr_text(TEXT) CASCADE;
 

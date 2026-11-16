@@ -3,10 +3,11 @@
 use crate::ui::state::AppState;
 use eframe::egui::{self, Color32, ComboBox, Frame, Margin, RichText, Ui};
 use sqlx::Row;
+use std::collections::BTreeSet;
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::Ordering;
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
@@ -159,26 +160,47 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                         "".to_string(),
                                         "All Groups",
                                     );
-                                    let groups = [
-                                        "entity_list",
-                                        "details_ghg_emission",
-                                        "ghg_scope3_emissions",
-                                        "details_energy_consumption",
-                                        "details_water_withdrawal",
-                                        "details_water_discharge",
-                                        "details_waste_management",
-                                        "women_representation_management",
-                                        "turnover_rate",
-                                        "details_safety_incident",
-                                        "details_posh",
-                                        "greencredits",
-                                    ];
-                                    for g in groups {
-                                        ui.selectable_value(
-                                            &mut state.export_state.export_scope_grouping,
-                                            g.to_string(),
-                                            g,
-                                        );
+
+                                    let dynamic_groups: BTreeSet<String> = state
+                                        .form_viewer
+                                        .form_template
+                                        .iter()
+                                        .filter_map(|it| it.friendly_grouping.as_deref())
+                                        .map(str::trim)
+                                        .filter(|s| !s.is_empty())
+                                        .map(str::to_string)
+                                        .collect();
+
+                                    if dynamic_groups.is_empty() {
+                                        let fallback_groups = [
+                                            "entity_list",
+                                            "details_ghg_emission",
+                                            "ghg_scope3_emissions",
+                                            "details_energy_consumption",
+                                            "details_water_withdrawal",
+                                            "details_water_discharge",
+                                            "details_waste_management",
+                                            "women_representation_management",
+                                            "turnover_rate",
+                                            "details_safety_incident",
+                                            "details_posh",
+                                            "greencredits",
+                                        ];
+                                        for g in fallback_groups {
+                                            ui.selectable_value(
+                                                &mut state.export_state.export_scope_grouping,
+                                                g.to_string(),
+                                                g,
+                                            );
+                                        }
+                                    } else {
+                                        for g in dynamic_groups {
+                                            ui.selectable_value(
+                                                &mut state.export_state.export_scope_grouping,
+                                                g.clone(),
+                                                &g,
+                                            );
+                                        }
                                     }
                                 });
                         });
@@ -302,80 +324,75 @@ fn trigger_data_export(state: &mut AppState, dest_path: PathBuf) {
         )
         .await;
 
-        match rows {
+        let feedback = match rows {
             Ok(records) => {
                 let count = records.len();
-                let mut csv_out = String::with_capacity(count * 128 + 256);
-                if write_bom {
-                    csv_out.push('\u{FEFF}');
-                }
-                csv_out.push_str(
-                    "Company,CIN,Sector,Section,Principle,Indicator_Type,Grouping,Metric,Context,Raw_Value,Canonical_Value,Unit,Data_Type\n",
-                );
-                for r in records {
-                    let comp: String = r.get("company_name");
-                    let cin: String = r.get("corporate_id_number");
-                    let sec: String = r.get("industry_sector");
-                    let s: String = r.get("section");
-                    let p: i16 = r.get("principle_number");
-                    let ind_type: String = r.get("indicator_type");
-                    let grp: String = r.get("friendly_grouping");
-                    let tag: String = r.get("standard_indicator_capmkt");
-                    let ctx: String = r.get("context_ref");
-                    let raw: Option<String> = r.get("raw_value");
-                    let std_num: Option<rust_decimal::Decimal> = r.get("standard_numeric_value");
-                    let unit: Option<String> = r.get("standard_unit_reference");
-                    let dt: String = r.get("response_datatype");
+                let write_res: std::io::Result<()> = (|| {
+                    let file = File::create(&dest_path)?;
+                    let mut writer = BufWriter::new(file);
+                    if write_bom {
+                        writer.write_all("\u{FEFF}".as_bytes())?;
+                    }
+                    writer.write_all(
+                        b"Company,CIN,Sector,Section,Principle,Indicator_Type,Grouping,Metric,Context,Raw_Value,Canonical_Value,Unit,Data_Type\n",
+                    )?;
+                    for r in records {
+                        let comp: String = r.get("company_name");
+                        let cin: String = r.get("corporate_id_number");
+                        let sec: String = r.get("industry_sector");
+                        let s: String = r.get("section");
+                        let p: i16 = r.get("principle_number");
+                        let ind_type: String = r.get("indicator_type");
+                        let grp: String = r.get("friendly_grouping");
+                        let tag: String = r.get("standard_indicator_capmkt");
+                        let ctx: String = r.get("context_ref");
+                        let raw: Option<String> = r.get("raw_value");
+                        let std_num: Option<rust_decimal::Decimal> =
+                            r.get("standard_numeric_value");
+                        let unit: Option<String> = r.get("standard_unit_reference");
+                        let dt: String = r.get("response_datatype");
 
-                    csv_out.push_str(&format!(
-                        "{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
-                        csv_escape(&comp),
-                        csv_escape(&cin),
-                        csv_escape(&sec),
-                        csv_escape(&s),
-                        p,
-                        csv_escape(&ind_type),
-                        csv_escape(&grp),
-                        csv_escape(&tag),
-                        csv_escape(&ctx),
-                        csv_escape(&raw.unwrap_or_default()),
-                        csv_escape(
-                            &std_num
-                                .map(|n| n.normalize().to_string())
-                                .unwrap_or_default()
+                        writeln!(
+                            writer,
+                            "{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                            csv_escape(&comp),
+                            csv_escape(&cin),
+                            csv_escape(&sec),
+                            csv_escape(&s),
+                            p,
+                            csv_escape(&ind_type),
+                            csv_escape(&grp),
+                            csv_escape(&tag),
+                            csv_escape(&ctx),
+                            csv_escape(&raw.unwrap_or_default()),
+                            csv_escape(
+                                &std_num
+                                    .map(|n| n.normalize().to_string())
+                                    .unwrap_or_default()
+                            ),
+                            csv_escape(&unit.unwrap_or_default()),
+                            csv_escape(&dt),
+                        )?;
+                    }
+                    writer.flush()
+                })();
+
+                match write_res {
+                    Ok(_) => (
+                        format!(
+                            "✓ Successfully exported {} facts to {}",
+                            count,
+                            dest_path.display()
                         ),
-                        csv_escape(&unit.unwrap_or_default()),
-                        csv_escape(&dt),
-                    ));
-                }
-
-                match File::create(&dest_path).and_then(|mut f| f.write_all(csv_out.as_bytes())) {
-                    Ok(_) => {
-                        let _ = export_tx
-                            .send((
-                                format!(
-                                    "✓ Successfully exported {} facts to {}",
-                                    count,
-                                    dest_path.display()
-                                ),
-                                false,
-                            ))
-                            .await;
-                    }
-                    Err(e) => {
-                        let _ = export_tx
-                            .send((format!("Failed to write export file: {}", e), true))
-                            .await;
-                    }
+                        false,
+                    ),
+                    Err(e) => (format!("Failed to write export file: {}", e), true),
                 }
             }
-            Err(e) => {
-                let _ = export_tx
-                    .send((format!("Export query failed: {}", e), true))
-                    .await;
-            }
-        }
+            Err(e) => (format!("Export query failed: {}", e), true),
+        };
 
+        let _ = export_tx.send(feedback).await;
         flag.store(false, Ordering::Relaxed);
     });
 }
@@ -394,6 +411,19 @@ fn trigger_db_backup(state: &mut AppState, target_path: PathBuf) {
     let export_tx = state.export_tx.clone();
 
     tokio::task::spawn_blocking(move || {
+        let rt = tokio::runtime::Handle::current();
+
+        let out_file = match File::create(&target_path) {
+            Ok(f) => f,
+            Err(e) => {
+                let _ = rt.block_on(
+                    export_tx.send((format!("Failed to create backup file: {}", e), true)),
+                );
+                flag.store(false, Ordering::Relaxed);
+                return;
+            }
+        };
+
         let output = if use_container {
             let runtime = if Command::new("podman")
                 .arg("--version")
@@ -404,11 +434,13 @@ fn trigger_db_backup(state: &mut AppState, target_path: PathBuf) {
             } else {
                 "docker"
             };
+            // Forward PGPASSWORD via host process env without exposing secret in CLI args
             Command::new(runtime)
+                .env("PGPASSWORD", &db_password)
                 .args([
                     "exec",
                     "-e",
-                    &format!("PGPASSWORD={}", db_password),
+                    "PGPASSWORD",
                     &container_name,
                     "pg_dump",
                     "-U",
@@ -418,6 +450,8 @@ fn trigger_db_backup(state: &mut AppState, target_path: PathBuf) {
                     "-F",
                     "c",
                 ])
+                .stdout(Stdio::from(out_file))
+                .stderr(Stdio::piped())
                 .output()
         } else {
             Command::new("pg_dump")
@@ -434,34 +468,28 @@ fn trigger_db_backup(state: &mut AppState, target_path: PathBuf) {
                     "-F",
                     "c",
                 ])
+                .stdout(Stdio::from(out_file))
+                .stderr(Stdio::piped())
                 .output()
         };
 
-        let rt = tokio::runtime::Handle::current();
-        match output {
-            Ok(out) if out.status.success() => match std::fs::write(&target_path, &out.stdout) {
-                Ok(_) => {
-                    let _ = rt.block_on(export_tx.send((
-                        format!("✓ Database backup saved: {}", target_path.display()),
-                        false,
-                    )));
-                }
-                Err(e) => {
-                    let _ = rt.block_on(
-                        export_tx.send((format!("Failed to save backup file: {}", e), true)),
-                    );
-                }
-            },
+        let feedback = match output {
+            Ok(out) if out.status.success() => (
+                format!("✓ Database backup saved: {}", target_path.display()),
+                false,
+            ),
             Ok(out) => {
+                let _ = std::fs::remove_file(&target_path);
                 let err = String::from_utf8_lossy(&out.stderr);
-                let _ = rt.block_on(export_tx.send((format!("pg_dump failed: {}", err), true)));
+                (format!("pg_dump failed: {}", err.trim()), true)
             }
             Err(e) => {
-                let _ = rt
-                    .block_on(export_tx.send((format!("Failed to execute pg_dump: {}", e), true)));
+                let _ = std::fs::remove_file(&target_path);
+                (format!("Failed to execute pg_dump: {}", e), true)
             }
-        }
+        };
 
+        let _ = rt.block_on(export_tx.send(feedback));
         flag.store(false, Ordering::Relaxed);
     });
 }
