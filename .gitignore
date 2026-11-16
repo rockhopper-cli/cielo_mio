@@ -4,6 +4,7 @@
 .env
 /downloads_test
 /downloads
+/text_sql
 xbrl_tag_rules.csv
 form_layout.csv
 cleaned_form_master.sql
